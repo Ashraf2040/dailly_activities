@@ -1,35 +1,40 @@
-'use client';
-import { useState } from 'react';
-import { signIn } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+// app/login/page.tsx
+'use client'
+import { useState } from 'react'
+import { signIn, getSession } from 'next-auth/react'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 export default function Login() {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const router = useRouter();
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const router = useRouter()
+  const search = useSearchParams()
+  const callbackUrl = search.get('callbackUrl') || '/'
 
   const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const result = await signIn('credentials', {
+    e.preventDefault()
+    setError('')
+
+    const res = await signIn('credentials', {
       redirect: false,
       username,
       password,
-    });
+      callbackUrl,
+    })
 
-    if (result?.error) {
-      setError('Invalid username or password');
-      return;
+    if (!res || res.error) {
+      setError('Invalid username or password')
+      return
     }
 
-    const response = await fetch('/api/auth/session');
-    const session = await response.json();
-    if (session?.user?.role === 'ADMIN') {
-      router.push('/admin');
-    } else {
-      router.push('/teacher');
-    }
-  };
+    // Fetch fresh session and route by role
+    const sess = await getSession()
+    const role = sess?.user?.role
+    if (role === 'ADMIN') router.push('/admin')
+    else if (role === 'TEACHER') router.push('/teacher')
+    else router.push(callbackUrl)
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -57,14 +62,11 @@ export default function Login() {
               required
             />
           </div>
-          <button
-            type="submit"
-            className="w-full bg-blue-600 text-white p-2 rounded-md hover:bg-blue-700"
-          >
+          <button type="submit" className="w-full bg-blue-600 text-white p-2 rounded-md hover:bg-blue-700">
             Login
           </button>
         </form>
       </div>
     </div>
-  );
+  )
 }
