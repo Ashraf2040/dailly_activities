@@ -5,7 +5,7 @@ import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
-
+export const runtime = "nodejs"
 // Extend Session, JWT, and User types
 declare module 'next-auth' {
   interface Session {
