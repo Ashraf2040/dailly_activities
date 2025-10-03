@@ -6,11 +6,13 @@ import { useRouter } from 'next/navigation';
 export default function AdminDashboard() {
   const { data: session, status } = useSession();
   const router = useRouter();
+
   const [teachers, setTeachers] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
   const [subjects, setSubjects] = useState<any[]>([]);
   const [lessons, setLessons] = useState<any[]>([]);
   const [filter, setFilter] = useState({ classId: '', date: '' });
+
   const [newTeacher, setNewTeacher] = useState({
     username: '',
     name: '',
@@ -20,10 +22,18 @@ export default function AdminDashboard() {
   });
   const [newClass, setNewClass] = useState({ name: '' });
   const [newSubject, setNewSubject] = useState({ name: '' });
+
   const [showTeacherForm, setShowTeacherForm] = useState(false);
   const [showTeacherDetails, setShowTeacherDetails] = useState(false);
   const [showClassForm, setShowClassForm] = useState(false);
   const [showSubjectForm, setShowSubjectForm] = useState(false);
+
+  // NEW: toggles and data for lessons and assigned teachers
+  const [showLessons, setShowLessons] = useState(false);
+  const [showAssigned, setShowAssigned] = useState(false);
+  const [assignedTeachersStatus, setAssignedTeachersStatus] = useState<
+    { id: string; username: string; name: string; submitted: boolean }[]
+  >([]);
 
   useEffect(() => {
     if (status === 'loading') return;
@@ -57,9 +67,32 @@ export default function AdminDashboard() {
       const res = await fetch(`/api/lessons?classId=${filter.classId}&date=${filter.date}`);
       const data = await res.json();
       setLessons(data);
+      setShowLessons(true);          // show table after fetching
+      setShowAssigned(false);        // hide assigned list when re-filtering
     } catch (error) {
       console.error('Error filtering lessons:', error);
     }
+  };
+
+  // NEW: compute assigned teachers and whether they submitted for the selected date
+  const handleShowAssignedTeachers = () => {
+    if (!filter.classId || !filter.date) {
+      alert('Please choose a class and date first');
+      return;
+    }
+    // Assuming lessons were fetched with the chosen classId and date, and each has lesson.teacherId
+    const submitted = new Set((lessons ?? []).map((l: any) => l.teacherId));
+    const assigned = teachers.filter((t: any) =>
+      (t.classes ?? []).some((c: any) => c.id === filter.classId)
+    );
+    const rows = assigned.map((t: any) => ({
+      id: t.id,
+      username: t.username,
+      name: t.name,
+      submitted: submitted.has(t.id),
+    }));
+    setAssignedTeachersStatus(rows);
+    setShowAssigned(true);
   };
 
   const handleCreateTeacher = async (e: React.FormEvent) => {
@@ -198,15 +231,13 @@ export default function AdminDashboard() {
 
       <div className="mx-auto max-w-7xl">
         <div className="mb-8 flex flex-col gap-2">
-          <h1 className="text-3xl font-bold tracking-tight text-[#064e4f]">
-            Admin Dashboard
-          </h1>
+          <h1 className="text-3xl font-bold tracking-tight text-[#064e4f]">Admin Dashboard</h1>
           <p className="text-sm text-gray-600">
             Manage teachers, classes, subjects, and view lessons with filters and export-friendly tables.
           </p>
         </div>
 
-        {/* Action Buttons */}
+        {/* Actions */}
         <div className="mb-8 flex flex-wrap gap-3">
           <button
             onClick={() => setShowTeacherForm(!showTeacherForm)}
@@ -415,10 +446,10 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* Lesson Filter and Table */}
+        {/* Filter */}
         <div className="mx-auto max-w-5xl rounded-2xl bg-white p-6 shadow-lg ring-1 ring-gray-100">
           <h2 className="mb-4 text-xl font-semibold text-[#064e4f]">View Lessons</h2>
-          <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-4">
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">Class</label>
               <select
@@ -451,9 +482,28 @@ export default function AdminDashboard() {
                 Show
               </button>
             </div>
+            <div className="flex items-end gap-3">
+              {showLessons && lessons.length > 0 && (
+                <button
+                  onClick={() => setShowLessons(false)}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 font-medium text-gray-800 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#83c5be] focus:ring-offset-2"
+                >
+                  Hide
+                </button>
+              )}
+              <button
+                onClick={() => (showAssigned ? setShowAssigned(false) : handleShowAssignedTeachers())}
+                className="w-full rounded-lg bg-[#83c5be] px-4 py-2.5 font-medium text-slate-900 shadow-sm ring-1 ring-[#83c5be]/40 transition hover:bg-[#83c5be]/90 focus:outline-none focus:ring-2 focus:ring-[#83c5be] focus:ring-offset-2"
+                disabled={!filter.classId || !filter.date}
+                title={!filter.classId || !filter.date ? 'Choose class and date first' : 'Show assigned teachers'}
+              >
+                {showAssigned ? 'Hide' : 'Teachers'}
+              </button>
+            </div>
           </div>
 
-          {lessons.length > 0 && (
+          {/* Lessons table (toggle) */}
+          {showLessons && lessons.length > 0 && (
             <div>
               <div className="overflow-hidden rounded-xl ring-1 ring-gray-200 shadow-sm">
                 <table id="lessons-table" className="w-full table-auto text-sm">
@@ -493,6 +543,46 @@ export default function AdminDashboard() {
               >
                 Print Table
               </button>
+            </div>
+          )}
+
+          {/* Assigned teachers table (toggle) */}
+          {showAssigned && (
+            <div className="mt-6">
+              <h3 className="mb-3 text-lg font-semibold text-[#064e4f]">Assigned Teachers for Selected Class</h3>
+              <div className="overflow-hidden rounded-xl ring-1 ring-gray-200 shadow-sm">
+                <table className="w-full table-auto text-sm">
+                  <thead className="bg-[#006d77] text-white">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-semibold">Username</th>
+                      <th className="px-4 py-3 text-left font-semibold">Name</th>
+                      <th className="px-4 py-3 text-left font-semibold">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {assignedTeachersStatus.map((t, idx) => (
+                      <tr
+                        key={t.id}
+                        className={idx % 2 === 0 ? 'bg-white hover:bg-[#83c5be]/10 transition-colors' : 'bg-gray-50 hover:bg-[#83c5be]/10 transition-colors'}
+                      >
+                        <td className="px-4 py-3">{t.username}</td>
+                        <td className="px-4 py-3">{t.name}</td>
+                        <td className="px-4 py-3">
+                          {t.submitted ? (
+                            <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">
+                              Submitted
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center rounded-full bg-rose-100 px-2.5 py-1 text-xs font-medium text-rose-700 ring-1 ring-rose-200">
+                              Missing
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
