@@ -1,12 +1,17 @@
-import NextAuth, { User, type NextAuthOptions, type Session } from 'next-auth';
+import NextAuth, { type NextAuthOptions, type Session, type User } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import { type JWT } from 'next-auth/jwt';
 import { PrismaClient } from '@prisma/client';
-import bcrypt from 'bcryptjs';
 
-const prisma = new PrismaClient();
+// Force Node.js runtime for Prisma on Vercel (App Router route handlers)
+export const runtime = 'nodejs';
 
-// Extend Session, JWT, and User types
+// Serverless-safe Prisma client pattern
+const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined };
+export const prisma =
+  globalForPrisma.prisma ?? new PrismaClient();
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+
+// Extend types
 declare module 'next-auth' {
   interface Session {
     user: {
@@ -16,7 +21,6 @@ declare module 'next-auth' {
       role: string;
     };
   }
-
   interface User {
     id: string;
     name: string;
@@ -24,16 +28,17 @@ declare module 'next-auth' {
     role: string;
   }
 }
-
 declare module 'next-auth/jwt' {
   interface JWT {
     id: string;
     name: string;
+    username: string;
     role: string;
   }
 }
 
 export const authOptions: NextAuthOptions = {
+  session: { strategy: 'jwt' },
   providers: [
     CredentialsProvider({
       name: 'Credentials',
@@ -42,17 +47,15 @@ export const authOptions: NextAuthOptions = {
         password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
-        if (!credentials?.username || !credentials?.password) {
-          return null;
-        }
+        if (!credentials?.username || !credentials?.password) return null;
 
         const user = await prisma.user.findUnique({
           where: { username: credentials.username },
         });
+        if (!user) return null;
 
-        if (!user || !bcrypt.compareSync(credentials.password, user.password)) {
-          return null;
-        }
+        // Plain-text check (for small-scale/local use)
+        if (user.password !== credentials.password) return null;
 
         return {
           id: user.id,
@@ -64,29 +67,28 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }: { token: JWT; user?: User }) {
+    async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
         token.name = user.name;
+        token.username = user.username;
         token.role = user.role;
       }
       return token;
     },
-    async session({ session, token }: { session: Session; token: JWT }) {
-      if (token.id && token.name && token.role) {
+    async session({ session, token }) {
+      if (token?.id && token?.name && token?.role && token?.username) {
         session.user = {
           id: token.id,
-          name: token.name,
-          username: session.user?.username || '',
-          role: token.role,
+          name: token.name as string,
+          username: token.username as string,
+          role: token.role as string,
         };
       }
       return session;
     },
   },
-  pages: {
-    signIn: '/login',
-  },
+  pages: { signIn: '/login' },
 };
 
 const handler = NextAuth(authOptions);

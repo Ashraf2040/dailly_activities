@@ -2,6 +2,7 @@
 import { SessionProvider } from 'next-auth/react';
 import { useEffect } from 'react';
 import './globals.css';
+import Navbar from './components/Navbar';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -20,7 +21,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className="antialiased">
-        <SessionProvider>{children}</SessionProvider>
+        <SessionProvider>
+          
+          <Navbar />
+          {children}
+          
+          
+          </SessionProvider>
       </body>
     </html>
   );
