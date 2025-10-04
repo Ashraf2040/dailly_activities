@@ -3,7 +3,7 @@ import { SessionProvider } from 'next-auth/react';
 import { useEffect } from 'react';
 import './globals.css';
 import Navbar from './components/Navbar';
-
+import ToasterProvider from './components/ToasterProvider';
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Suppress hydration warnings in development
@@ -25,7 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           
           <Navbar />
           {children}
-          
+           <ToasterProvider />
           
           </SessionProvider>
       </body>

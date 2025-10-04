@@ -1,7 +1,10 @@
+// app/admin/page.tsx (or wherever AdminDashboard lives)
 'use client';
+
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import toast from 'react-hot-toast';
 
 export default function AdminDashboard() {
   const { data: session, status } = useSession();
@@ -28,59 +31,98 @@ export default function AdminDashboard() {
   const [showClassForm, setShowClassForm] = useState(false);
   const [showSubjectForm, setShowSubjectForm] = useState(false);
 
-  // NEW: toggles and data for lessons and assigned teachers
+  // toggles and data for lessons and assigned teachers
   const [showLessons, setShowLessons] = useState(false);
   const [showAssigned, setShowAssigned] = useState(false);
   const [assignedTeachersStatus, setAssignedTeachersStatus] = useState<
     { id: string; username: string; name: string; submitted: boolean }[]
   >([]);
 
+  // GLOBAL LOADING OVERLAY STATE
+  const [pendingCount, setPendingCount] = useState(0);
+
+  // track(): increments pending before a promise and always decrements in finally
+  const track = <T,>(p: Promise<T>) => {
+    setPendingCount((c) => c + 1);
+    return p.finally(() => setPendingCount((c) => Math.max(0, c - 1)));
+  };
+
+  // fetchJson(): throw error for non-OK responses so toast.promise can show the message
+  const fetchJson = async (input: RequestInfo, init?: RequestInit) => {
+    const res = await fetch(input, init);
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      // ignore JSON parse failure for no-body responses
+    }
+    if (!res.ok) {
+      const message = data?.error || res.statusText || 'Request failed';
+      throw new Error(message);
+    }
+    return data;
+  };
+
   useEffect(() => {
     if (status === 'loading') return;
+
     if (!session || !session.user || session.user.role !== 'ADMIN') {
       router.push('/login');
       return;
     }
 
-    const fetchData = async () => {
-      try {
-        const [teachersRes, classesRes, subjectsRes] = await Promise.all([
-          fetch('/api/admin/teachers'),
-          fetch('/api/classes'),
-          fetch('/api/subjects'),
-        ]);
-        const teachersData = await teachersRes.json();
-        const classesData = await classesRes.json();
-        const subjectsData = await subjectsRes.json();
-        setTeachers(teachersData);
-        setClasses(classesData);
-        setSubjects(subjectsData);
-      } catch (error) {
-        console.error('Error fetching data:', error);
-      }
+    const load = async () => {
+      await toast.promise(
+        track(
+          Promise.all([
+            fetchJson('/api/admin/teachers'),
+            fetchJson('/api/classes'),
+            fetchJson('/api/subjects'),
+          ]).then(([t, c, s]) => {
+            setTeachers(t);
+            setClasses(c);
+            setSubjects(s);
+          })
+        ),
+        {
+          loading: 'Loading admin data…',
+          success: 'Admin data loaded',
+          error: (e) => `Failed to load: ${String((e as any)?.message || e)}`,
+        }
+      );
     };
-    fetchData();
+
+    load();
   }, [session, status, router]);
 
   const handleFilter = async () => {
+    if (!filter.classId || !filter.date) {
+      toast.error('Choose class and date first');
+      return;
+    }
     try {
-      const res = await fetch(`/api/lessons?classId=${filter.classId}&date=${filter.date}`);
-      const data = await res.json();
+      const data = await toast.promise(
+        track(fetchJson(`/api/lessons?classId=${filter.classId}&date=${filter.date}`)),
+        {
+          loading: 'Loading lessons…',
+          success: 'Lessons loaded',
+          error: (e) => `Failed to load lessons: ${String((e as any)?.message || e)}`,
+        }
+      );
       setLessons(data);
-      setShowLessons(true);          // show table after fetching
-      setShowAssigned(false);        // hide assigned list when re-filtering
-    } catch (error) {
-      console.error('Error filtering lessons:', error);
+      setShowLessons(true);
+      setShowAssigned(false);
+    } catch {
+      // toast already shown
     }
   };
 
-  // NEW: compute assigned teachers and whether they submitted for the selected date
+  // compute assigned teachers and whether they submitted for the selected date
   const handleShowAssignedTeachers = () => {
     if (!filter.classId || !filter.date) {
-      alert('Please choose a class and date first');
+      toast.error('Choose class and date first');
       return;
     }
-    // Assuming lessons were fetched with the chosen classId and date, and each has lesson.teacherId
     const submitted = new Set((lessons ?? []).map((l: any) => l.teacherId));
     const assigned = teachers.filter((t: any) =>
       (t.classes ?? []).some((c: any) => c.id === filter.classId)
@@ -98,82 +140,112 @@ export default function AdminDashboard() {
   const handleCreateTeacher = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch('/api/admin/teachers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...newTeacher, role: 'TEACHER' }),
-      });
-      if (res.ok) {
-        setNewTeacher({ username: '', name: '', password: '', classIds: [], subjectIds: [] });
-        setShowTeacherForm(false);
-        const teachersRes = await fetch('/api/admin/teachers');
-        setTeachers(await teachersRes.json());
-      } else {
-        const errorData = await res.json();
-        alert(`Failed to create teacher: ${errorData.error || 'Unknown error'}`);
-      }
-    } catch (error) {
-      alert('Failed to create teacher: Network error');
+      await toast.promise(
+        track(
+          (async () => {
+            await fetchJson('/api/admin/teachers', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ...newTeacher, role: 'TEACHER' }),
+            });
+            const t = await fetchJson('/api/admin/teachers');
+            setTeachers(t);
+            setNewTeacher({
+              username: '',
+              name: '',
+              password: '',
+              classIds: [],
+              subjectIds: [],
+            });
+            setShowTeacherForm(false);
+          })()
+        ),
+        {
+          loading: 'Creating teacher…',
+          success: 'Teacher created',
+          error: (e) => `Failed to create teacher: ${String((e as any)?.message || e)}`,
+        }
+      );
+    } catch {
+      // toast already shown
     }
   };
 
   const handleDeleteTeacher = async (id: string) => {
     if (!confirm('Are you sure you want to delete this teacher?')) return;
     try {
-      const res = await fetch(`/api/admin/teachers/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        const teachersRes = await fetch('/api/admin/teachers');
-        setTeachers(await teachersRes.json());
-      } else {
-        const errorData = await res.json();
-        alert(`Failed to delete teacher: ${errorData.error || 'Unknown error'}`);
-      }
-    } catch (error) {
-      alert('Failed to delete teacher: Network error');
+      await toast.promise(
+        track(
+          (async () => {
+            await fetchJson(`/api/admin/teachers/${id}`, { method: 'DELETE' });
+            const t = await fetchJson('/api/admin/teachers');
+            setTeachers(t);
+          })()
+        ),
+        {
+          loading: 'Deleting teacher…',
+          success: 'Teacher deleted',
+          error: (e) => `Failed to delete teacher: ${String((e as any)?.message || e)}`,
+        }
+      );
+    } catch {
+      // toast already shown
     }
   };
 
   const handleCreateClass = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch('/api/classes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newClass),
-      });
-      if (res.ok) {
-        setNewClass({ name: '' });
-        setShowClassForm(false);
-        const classesRes = await fetch('/api/classes');
-        setClasses(await classesRes.json());
-      } else {
-        const errorData = await res.json();
-        alert(`Failed to create class: ${errorData.error || 'Unknown error'}`);
-      }
-    } catch (error) {
-      alert('Failed to create class: Network error');
+      await toast.promise(
+        track(
+          (async () => {
+            await fetchJson('/api/classes', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(newClass),
+            });
+            const c = await fetchJson('/api/classes');
+            setClasses(c);
+            setNewClass({ name: '' });
+            setShowClassForm(false);
+          })()
+        ),
+        {
+          loading: 'Creating class…',
+          success: 'Class created',
+          error: (e) => `Failed to create class: ${String((e as any)?.message || e)}`,
+        }
+      );
+    } catch {
+      // toast already shown
     }
   };
 
   const handleCreateSubject = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch('/api/subjects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newSubject),
-      });
-      if (res.ok) {
-        setNewSubject({ name: '' });
-        setShowSubjectForm(false);
-        const subjectsRes = await fetch('/api/subjects');
-        setSubjects(await subjectsRes.json());
-      } else {
-        const errorData = await res.json();
-        alert(`Failed to create subject: ${errorData.error || 'Unknown error'}`);
-      }
-    } catch (error) {
-      alert('Failed to create subject: Network error');
+      await toast.promise(
+        track(
+          (async () => {
+            await fetchJson('/api/subjects', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(newSubject),
+            });
+            const s = await fetchJson('/api/subjects');
+            setSubjects(s);
+            setNewSubject({ name: '' });
+            setShowSubjectForm(false);
+          })()
+        ),
+        {
+          loading: 'Creating subject…',
+          success: 'Subject created',
+          error: (e) => `Failed to create subject: ${String((e as any)?.message || e)}`,
+        }
+      );
+    } catch {
+      // toast already shown
     }
   };
 
@@ -242,6 +314,7 @@ export default function AdminDashboard() {
           <button
             onClick={() => setShowTeacherForm(!showTeacherForm)}
             className="inline-flex items-center justify-center rounded-lg bg-[#006d77] px-4 py-2.5 text-white shadow-sm ring-1 ring-[#006d77]/20 transition hover:bg-[#006d77]/90 focus:outline-none focus:ring-2 focus:ring-[#006d77] focus:ring-offset-2"
+            disabled={pendingCount > 0}
           >
             {showTeacherForm ? 'Hide Create Teacher' : 'Create Teacher'}
           </button>
@@ -249,6 +322,7 @@ export default function AdminDashboard() {
           <button
             onClick={() => setShowTeacherDetails(!showTeacherDetails)}
             className="inline-flex items-center justify-center rounded-lg bg-[#83c5be] px-4 py-2.5 text-slate-900 shadow-sm ring-1 ring-[#83c5be]/40 transition hover:bg-[#83c5be]/90 focus:outline-none focus:ring-2 focus:ring-[#83c5be] focus:ring-offset-2"
+            disabled={pendingCount > 0}
           >
             {showTeacherDetails ? 'Hide Teacher Details' : 'Show Teacher Details'}
           </button>
@@ -256,6 +330,7 @@ export default function AdminDashboard() {
           <button
             onClick={() => setShowClassForm(!showClassForm)}
             className="inline-flex items-center justify-center rounded-lg border border-[#006d77]/30 bg-white px-4 py-2.5 text-[#006d77] shadow-sm transition hover:bg-[#006d77]/5 focus:outline-none focus:ring-2 focus:ring-[#006d77] focus:ring-offset-2"
+            disabled={pendingCount > 0}
           >
             {showClassForm ? 'Hide Create Class' : 'Create Class'}
           </button>
@@ -263,6 +338,7 @@ export default function AdminDashboard() {
           <button
             onClick={() => setShowSubjectForm(!showSubjectForm)}
             className="inline-flex items-center justify-center rounded-lg bg-[#e29578] px-4 py-2.5 text-white shadow-sm ring-1 ring-[#e29578]/20 transition hover:bg-[#e29578]/90 focus:outline-none focus:ring-2 focus:ring-[#e29578] focus:ring-offset-2"
+            disabled={pendingCount > 0}
           >
             {showSubjectForm ? 'Hide Create Subject' : 'Create Subject'}
           </button>
@@ -346,9 +422,10 @@ export default function AdminDashboard() {
               <div className="sm:col-span-2">
                 <button
                   type="submit"
-                  className="mt-2 w-full rounded-lg bg-[#006d77] px-4 py-2.5 font-medium text-white shadow-sm ring-1 ring-[#006d77]/20 transition hover:bg-[#006d77]/90 focus:outline-none focus:ring-2 focus:ring-[#006d77] focus:ring-offset-2"
+                  disabled={pendingCount > 0}
+                  className="mt-2 w-full rounded-lg bg-[#006d77] px-4 py-2.5 font-medium text-white shadow-sm ring-1 ring-[#006d77]/20 transition hover:bg-[#006d77]/90 focus:outline-none focus:ring-2 focus:ring-[#006d77] focus:ring-offset-2 disabled:opacity-60"
                 >
-                  Create Teacher
+                  {pendingCount > 0 ? 'Working…' : 'Create Teacher'}
                 </button>
               </div>
             </form>
@@ -372,9 +449,10 @@ export default function AdminDashboard() {
               </div>
               <button
                 type="submit"
-                className="w-full rounded-lg bg-[#83c5be] px-4 py-2.5 font-medium text-slate-900 shadow-sm ring-1 ring-[#83c5be]/40 transition hover:bg-[#83c5be]/90 focus:outline-none focus:ring-2 focus:ring-[#83c5be] focus:ring-offset-2"
+                disabled={pendingCount > 0}
+                className="w-full rounded-lg bg-[#83c5be] px-4 py-2.5 font-medium text-slate-900 shadow-sm ring-1 ring-[#83c5be]/40 transition hover:bg-[#83c5be]/90 focus:outline-none focus:ring-2 focus:ring-[#83c5be] focus:ring-offset-2 disabled:opacity-60"
               >
-                Create Class
+                {pendingCount > 0 ? 'Working…' : 'Create Class'}
               </button>
             </form>
           </div>
@@ -397,9 +475,10 @@ export default function AdminDashboard() {
               </div>
               <button
                 type="submit"
-                className="w-full rounded-lg bg-[#e29578] px-4 py-2.5 font-medium text-white shadow-sm ring-1 ring-[#e29578]/20 transition hover:bg-[#e29578]/90 focus:outline-none focus:ring-2 focus:ring-[#e29578] focus:ring-offset-2"
+                disabled={pendingCount > 0}
+                className="w-full rounded-lg bg-[#e29578] px-4 py-2.5 font-medium text-white shadow-sm ring-1 ring-[#e29578]/20 transition hover:bg-[#e29578]/90 focus:outline-none focus:ring-2 focus:ring-[#e29578] focus:ring-offset-2 disabled:opacity-60"
               >
-                Create Subject
+                {pendingCount > 0 ? 'Working…' : 'Create Subject'}
               </button>
             </form>
           </div>
@@ -409,7 +488,7 @@ export default function AdminDashboard() {
         {showTeacherDetails && (
           <div className="mx-auto mb-8 max-w-5xl rounded-2xl bg-white p-6 shadow-lg ring-1 ring-gray-100">
             <h2 className="mb-4 text-xl font-semibold text-[#064e4f]">Teachers</h2>
-            <div className="overflow-hidden rounded-xl ring-1 ring-gray-200 shadow-sm">
+            <div className="overflow-scroll rounded-xl ring-1 ring-gray-200 shadow-sm">
               <table className="w-full table-auto text-sm">
                 <thead className="bg-[#006d77] text-white">
                   <tr>
@@ -424,7 +503,11 @@ export default function AdminDashboard() {
                   {teachers.map((teacher: any, idx: number) => (
                     <tr
                       key={teacher.id}
-                      className={idx % 2 === 0 ? 'bg-white hover:bg-[#83c5be]/10 transition-colors' : 'bg-gray-50 hover:bg-[#83c5be]/10 transition-colors'}
+                      className={
+                        idx % 2 === 0
+                          ? 'bg-white hover:bg-[#83c5be]/10 transition-colors'
+                          : 'bg-gray-50 hover:bg-[#83c5be]/10 transition-colors'
+                      }
                     >
                       <td className="px-4 py-3">{teacher.username}</td>
                       <td className="px-4 py-3">{teacher.name}</td>
@@ -433,7 +516,8 @@ export default function AdminDashboard() {
                       <td className="px-4 py-3">
                         <button
                           onClick={() => handleDeleteTeacher(teacher.id)}
-                          className="rounded-md bg-[#e29578] px-3 py-1.5 text-white shadow-sm ring-1 ring-[#e29578]/20 transition hover:bg-[#e29578]/90 focus:outline-none focus:ring-2 focus:ring-[#e29578] focus:ring-offset-2"
+                          disabled={pendingCount > 0}
+                          className="rounded-md bg-[#e29578] px-3 py-1.5 text-white shadow-sm ring-1 ring-[#e29578]/20 transition hover:bg-[#e29578]/90 focus:outline-none focus:ring-2 focus:ring-[#e29578] focus:ring-offset-2 disabled:opacity-60"
                         >
                           Delete
                         </button>
@@ -477,16 +561,18 @@ export default function AdminDashboard() {
             <div className="flex items-end">
               <button
                 onClick={handleFilter}
-                className="w-full rounded-lg bg-[#006d77] px-4 py-2.5 font-medium text-white shadow-sm ring-1 ring-[#006d77]/20 transition hover:bg-[#006d77]/90 focus:outline-none focus:ring-2 focus:ring-[#006d77] focus:ring-offset-2"
+                disabled={pendingCount > 0}
+                className="w-full rounded-lg bg-[#006d77] px-4 py-2.5 font-medium text-white shadow-sm ring-1 ring-[#006d77]/20 transition hover:bg-[#006d77]/90 focus:outline-none focus:ring-2 focus:ring-[#006d77] focus:ring-offset-2 disabled:opacity-60"
               >
-                Show
+                {pendingCount > 0 ? 'Loading…' : 'Show'}
               </button>
             </div>
             <div className="flex items-end gap-3">
               {showLessons && lessons.length > 0 && (
                 <button
                   onClick={() => setShowLessons(false)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 font-medium text-gray-800 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#83c5be] focus:ring-offset-2"
+                  disabled={pendingCount > 0}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 font-medium text-gray-800 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#83c5be] focus:ring-offset-2 disabled:opacity-60"
                 >
                   Hide
                 </button>
@@ -494,7 +580,7 @@ export default function AdminDashboard() {
               <button
                 onClick={() => (showAssigned ? setShowAssigned(false) : handleShowAssignedTeachers())}
                 className="w-full rounded-lg bg-[#83c5be] px-4 py-2.5 font-medium text-slate-900 shadow-sm ring-1 ring-[#83c5be]/40 transition hover:bg-[#83c5be]/90 focus:outline-none focus:ring-2 focus:ring-[#83c5be] focus:ring-offset-2"
-                disabled={!filter.classId || !filter.date}
+                disabled={!filter.classId || !filter.date || pendingCount > 0}
                 title={!filter.classId || !filter.date ? 'Choose class and date first' : 'Show assigned teachers'}
               >
                 {showAssigned ? 'Hide' : 'Teachers'}
@@ -505,7 +591,7 @@ export default function AdminDashboard() {
           {/* Lessons table (toggle) */}
           {showLessons && lessons.length > 0 && (
             <div>
-              <div className="overflow-hidden rounded-xl ring-1 ring-gray-200 shadow-sm">
+              <div className="overflow-scroll rounded-xl ring-1 ring-gray-200 shadow-sm">
                 <table id="lessons-table" className="w-full table-auto text-sm">
                   <thead className="bg-[#006d77] text-white">
                     <tr>
@@ -522,7 +608,11 @@ export default function AdminDashboard() {
                     {lessons.map((lesson: any, idx: number) => (
                       <tr
                         key={lesson.id}
-                        className={idx % 2 === 0 ? 'bg-white hover:bg-[#83c5be]/10 transition-colors' : 'bg-gray-50 hover:bg-[#83c5be]/10 transition-colors'}
+                        className={
+                          idx % 2 === 0
+                            ? 'bg-white hover:bg-[#83c5be]/10 transition-colors'
+                            : 'bg-gray-50 hover:bg-[#83c5be]/10 transition-colors'
+                        }
                       >
                         <td className="px-4 py-3">{lesson.subject.name}</td>
                         <td className="px-4 py-3">{lesson.unit}</td>
@@ -563,7 +653,11 @@ export default function AdminDashboard() {
                     {assignedTeachersStatus.map((t, idx) => (
                       <tr
                         key={t.id}
-                        className={idx % 2 === 0 ? 'bg-white hover:bg-[#83c5be]/10 transition-colors' : 'bg-gray-50 hover:bg-[#83c5be]/10 transition-colors'}
+                        className={
+                          idx % 2 === 0
+                            ? 'bg-white hover:bg-[#83c5be]/10 transition-colors'
+                            : 'bg-gray-50 hover:bg-[#83c5be]/10 transition-colors'
+                        }
                       >
                         <td className="px-4 py-3">{t.username}</td>
                         <td className="px-4 py-3">{t.name}</td>
@@ -587,6 +681,16 @@ export default function AdminDashboard() {
           )}
         </div>
       </div>
+
+      {/* Global loading overlay */}
+      {pendingCount > 0 && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/10 backdrop-blur-sm">
+          <div className="flex items-center gap-3 rounded-lg bg-white px-4 py-3 shadow-lg ring-1 ring-gray-200">
+            <span className="h-3 w-3 animate-ping rounded-full bg-[#006d77]" />
+            <span className="text-sm text-gray-700">Working...</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
