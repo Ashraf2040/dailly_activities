@@ -1,7 +1,7 @@
-// app/admin/page.tsx (or wherever AdminDashboard lives)
+
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
@@ -35,7 +35,7 @@ export default function AdminDashboard() {
   const [showLessons, setShowLessons] = useState(false);
   const [showAssigned, setShowAssigned] = useState(false);
   const [assignedTeachersStatus, setAssignedTeachersStatus] = useState<
-    { id: string; username: string; name: string; submitted: boolean }[]
+    { id: string; username: string; name: string; submitted: boolean; submittedAt?: string | null }[]
   >([]);
 
   // GLOBAL LOADING OVERLAY STATE
@@ -63,13 +63,24 @@ export default function AdminDashboard() {
     return data;
   };
 
+  // One-time bootstrap guard: avoid refocus-triggered reloads
+  const loadedOnce = useRef(false);
+
+  // Format a timestamp as HH:MM (local)
+  const formatTime = (ts?: string | Date | null) => {
+    if (!ts) return '-';
+    const d = new Date(ts);
+    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  };
+
   useEffect(() => {
     if (status === 'loading') return;
-
     if (!session || !session.user || session.user.role !== 'ADMIN') {
       router.push('/login');
       return;
     }
+    if (loadedOnce.current) return; // do not refetch on tab focus or session refetch
+    loadedOnce.current = true;
 
     const load = async () => {
       await toast.promise(
@@ -94,6 +105,7 @@ export default function AdminDashboard() {
 
     load();
   }, [session, status, router]);
+  console.log(assignedTeachersStatus)
 
   const handleFilter = async () => {
     if (!filter.classId || !filter.date) {
@@ -117,22 +129,39 @@ export default function AdminDashboard() {
     }
   };
 
-  // compute assigned teachers and whether they submitted for the selected date
+  // compute assigned teachers + submitted flag + first submit time
   const handleShowAssignedTeachers = () => {
     if (!filter.classId || !filter.date) {
       toast.error('Choose class and date first');
       return;
     }
+
+    // Build earliest submission time for each teacher from current lessons list
+    const firstSubmitByTeacher = new Map<string, string | null>();
+    const sorted = [...(lessons ?? [])].sort((a: any, b: any) => {
+      const ta = new Date(a.createdAt ?? a.date).getTime();
+      const tb = new Date(b.createdAt ?? b.date).getTime();
+      return ta - tb;
+    });
+    for (const l of sorted) {
+      if (!firstSubmitByTeacher.has(l.teacherId)) {
+        firstSubmitByTeacher.set(l.teacherId, (l.createdAt ?? l.date) as string | null);
+      }
+    }
+
     const submitted = new Set((lessons ?? []).map((l: any) => l.teacherId));
     const assigned = teachers.filter((t: any) =>
       (t.classes ?? []).some((c: any) => c.id === filter.classId)
     );
+
     const rows = assigned.map((t: any) => ({
       id: t.id,
       username: t.username,
       name: t.name,
       submitted: submitted.has(t.id),
+      submittedAt: firstSubmitByTeacher.get(t.id) ?? null,
     }));
+
     setAssignedTeachersStatus(rows);
     setShowAssigned(true);
   };
@@ -264,7 +293,7 @@ export default function AdminDashboard() {
     printWindow?.document.write(`
       <html>
         <head>
-          <title>Lessons Report</title>
+          <title>${className} - ${dateStr}</title>
           <style>
             body { font-family: Arial, sans-serif; margin: 20px; }
             h1 { text-align: center; }
@@ -275,7 +304,7 @@ export default function AdminDashboard() {
           </style>
         </head>
         <body>
-          <h1>Lessons Report for ${className} - ${dateStr}</h1>
+          <h1>Daily Academic Plan for ${className} - ${dateStr}</h1>
           ${tableContent}
         </body>
       </html>
@@ -284,17 +313,6 @@ export default function AdminDashboard() {
     printWindow?.focus();
     printWindow?.print();
   };
-
-  if (status === 'loading') {
-    return (
-      <div className="min-h-screen grid place-items-center bg-gradient-to-br from-white via-[#f1fbf9] to-[#eaf7f5]">
-        <div className="inline-flex items-center gap-3 text-[#006d77]">
-          <span className="h-3 w-3 animate-ping rounded-full bg-[#006d77]" />
-          <span className="text-lg font-medium">Loading...</span>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-white via-[#f1fbf9] to-[#eaf7f5] p-6">
@@ -494,6 +512,7 @@ export default function AdminDashboard() {
                   <tr>
                     <th className="px-4 py-3 text-left font-semibold">Username</th>
                     <th className="px-4 py-3 text-left font-semibold">Name</th>
+                    <th className="px-4 py-3 text-left font-semibold">Password</th>
                     <th className="px-4 py-3 text-left font-semibold">Classes</th>
                     <th className="px-4 py-3 text-left font-semibold">Subjects</th>
                     <th className="px-4 py-3 text-left font-semibold">Actions</th>
@@ -511,6 +530,7 @@ export default function AdminDashboard() {
                     >
                       <td className="px-4 py-3">{teacher.username}</td>
                       <td className="px-4 py-3">{teacher.name}</td>
+                      <td className="px-4 py-3">{teacher.password ?? '-'}</td>
                       <td className="px-4 py-3">{teacher.classes.map((c: any) => c.name).join(', ')}</td>
                       <td className="px-4 py-3">{teacher.subjects.map((s: any) => s.name).join(', ')}</td>
                       <td className="px-4 py-3">
@@ -620,7 +640,12 @@ export default function AdminDashboard() {
                         <td className="px-4 py-3">{lesson.objective}</td>
                         <td className="px-4 py-3">{lesson.pages}</td>
                         <td className="px-4 py-3">{lesson.homework || '-'}</td>
-                        <td className="px-4 py-3">{lesson.comments || '-'}</td>
+                        <td
+                          className="px-4 py-3"
+                          dir={`${lesson.subject.name === 'Islamic' || lesson.subject.name === 'Arabic' ? 'rtl' : 'ltr'}`}
+                        >
+                          {lesson.comments || '-'}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -647,6 +672,7 @@ export default function AdminDashboard() {
                       <th className="px-4 py-3 text-left font-semibold">Username</th>
                       <th className="px-4 py-3 text-left font-semibold">Name</th>
                       <th className="px-4 py-3 text-left font-semibold">Status</th>
+                      <th className="px-4 py-3 text-left font-semibold">Submitted at</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -672,6 +698,9 @@ export default function AdminDashboard() {
                             </span>
                           )}
                         </td>
+                        <td className="px-4 py-3">
+                          {t.submitted ? formatTime(t.submittedAt ?? null) : '-'}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -694,3 +723,5 @@ export default function AdminDashboard() {
     </div>
   );
 }
+
+

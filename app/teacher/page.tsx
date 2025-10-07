@@ -1,10 +1,4 @@
-// app/teacher/page.tsx (or components/TeacherDashboard.tsx)
-// This file is a self-contained, fixed version with:
-// - Global loading overlay driven by a pending counter
-// - toast.promise wrapping all API calls (load, submit, update, refresh)
-// - Today's lessons table with inline edit (save/cancel)
-// - No blocking alerts; replaced with toasts
-
+// app/teacher/page.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -12,7 +6,6 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 
-// Types are optional and can be adapted to the actual API responses
 type Lesson = {
   id: string;
   classId: string;
@@ -28,7 +21,6 @@ type Lesson = {
   subject?: { id: string; name: string };
 };
 
-// Helper to format today once per mount
 const getTodayStr = () => new Date().toISOString().slice(0, 10);
 
 export default function TeacherDashboard() {
@@ -42,7 +34,7 @@ export default function TeacherDashboard() {
   const [formData, setFormData] = useState({
     classId: '',
     subjectId: '',
-    date: getTodayStr(), // default to today for convenience
+    date: getTodayStr(),
     unit: '',
     lesson: '',
     objective: '',
@@ -51,24 +43,20 @@ export default function TeacherDashboard() {
     comments: '',
   });
 
-  console.log(session?.user)
-
-  // Global pending counter for overlay and disabling buttons
+  // Global pending counter
   const [pendingCount, setPendingCount] = useState(0);
   const track = <T,>(p: Promise<T>) => {
     setPendingCount((c) => c + 1);
     return p.finally(() => setPendingCount((c) => Math.max(0, c - 1)));
   };
 
-  // JSON fetch helper that throws on !ok with message from server body if present
+  // JSON fetch helper
   const fetchJson = async (input: RequestInfo, init?: RequestInit) => {
     const res = await fetch(input, init);
     let data: any = null;
     try {
       data = await res.json();
-    } catch {
-      // response may have no body
-    }
+    } catch {}
     if (!res.ok) {
       const message = data?.error || res.statusText || 'Request failed';
       throw new Error(message);
@@ -76,13 +64,10 @@ export default function TeacherDashboard() {
     return data;
   };
 
-  //fetch user by session//
-
-
   const teacherId = session?.user?.id as string | undefined;
   const today = useMemo(getTodayStr, []);
- console.log(todayLessons)
-  // Load classes, teacher subjects, and today's lessons
+
+  // Initial load
   useEffect(() => {
     if (status === 'loading') return;
     if (!session || !session.user) {
@@ -110,7 +95,7 @@ export default function TeacherDashboard() {
       );
     };
     load();
-  }, [session, status, router, today]);
+  }, [session, status, router, today]); // [web:215][web:222]
 
   const refreshTodayLessons = async () => {
     if (!teacherId) return;
@@ -125,12 +110,13 @@ export default function TeacherDashboard() {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+    e.preventDefault(); // keep controlled values without page refresh [web:222][web:210]
     if (!teacherId) {
       toast.error('Not authenticated');
       return;
     }
-    // Ensure the date is set (today by default)
+
+    // Persist values after submit: do NOT clear formData here
     const payload = { ...formData, teacherId };
     try {
       await toast.promise(
@@ -141,16 +127,8 @@ export default function TeacherDashboard() {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload),
             });
-            await refreshTodayLessons(); // shows its own toast
-            setFormData((prev) => ({
-              ...prev,
-              unit: '',
-              lesson: '',
-              objective: '',
-              homework: '',
-              pages: '',
-              comments: '',
-            }));
+            await refreshTodayLessons();
+            // Intentionally keep form values to enable quick re-submit to another class/subject
           })()
         ),
         {
@@ -159,9 +137,7 @@ export default function TeacherDashboard() {
           error: (e) => `Failed to submit: ${String((e as any)?.message || e)}`,
         }
       );
-    } catch {
-      // toast already shown by toast.promise
-    }
+    } catch {}
   };
 
   // Inline editing state
@@ -177,7 +153,6 @@ export default function TeacherDashboard() {
       homework: row.homework ?? '',
       pages: row.pages,
       comments: row.comments ?? '',
-      // keep classId and subjectId immutable for simplicity; can enable if desired
     });
   };
 
@@ -197,7 +172,7 @@ export default function TeacherDashboard() {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(editData),
             });
-            await refreshTodayLessons(); // shows its own toast
+            await refreshTodayLessons();
             cancelEdit();
           })()
         ),
@@ -207,16 +182,11 @@ export default function TeacherDashboard() {
           error: (e) => `Failed to update: ${String((e as any)?.message || e)}`,
         }
       );
-    } catch {
-      // toast already shown
-    }
+    } catch {}
   };
 
-  console.log(todayLessons)
-  console.log(subjects)
+  const todaysTeacherLessons = todayLessons.filter((l: any) => l.teacherId === teacherId);
 
-  const todaysTeacherLessons = todayLessons.filter((l) => l.teacherId === teacherId);
-  console.log(todaysTeacherLessons)
   if (status === 'loading') {
     return (
       <div className="min-h-screen grid place-items-center bg-gradient-to-br from-white via-[#f1fbf9] to-[#eaf7f5]">
@@ -367,11 +337,14 @@ export default function TeacherDashboard() {
           </div>
 
           <div className="mt-5 flex items-center justify-end gap-3">
+            {/* Reset clears all fields except date for convenience */}
             <button
               type="button"
               onClick={() =>
                 setFormData({
-                  ...formData,
+                  classId: '',
+                  subjectId: '',
+                  date: formData.date, // keep date to avoid re-picking
                   unit: '',
                   lesson: '',
                   objective: '',
@@ -395,7 +368,7 @@ export default function TeacherDashboard() {
           </div>
         </form>
 
-        {/* Today's lessons table with inline edit */}
+        {/* Today’s lessons */}
         <div className="mt-8 rounded-2xl bg-white p-6 shadow-lg ring-1 ring-gray-100">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-xl font-semibold text-[#064e4f]">Today’s Lessons</h2>

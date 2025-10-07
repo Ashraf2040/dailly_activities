@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useSession, signIn, signOut } from 'next-auth/react';
+import Image from 'next/image';
 
 export default function Navbar() {
   const { data: session, status } = useSession();
@@ -20,7 +21,7 @@ export default function Navbar() {
       <nav className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
         <div className="flex items-center gap-3">
           <Link href="/" className="text-xl font-semibold text-[#064e4f] hover:text-[#006d77]">
-            School Portal
+           <Image src='/logo.png' alt='' width={100} height={100} />
           </Link>
         </div>
 

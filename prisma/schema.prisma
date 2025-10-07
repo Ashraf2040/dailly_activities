@@ -43,6 +43,7 @@ model Lesson {
   lesson     String
   objective  String
   homework   String?
+  createdAt  DateTime @default(now())
   comments   String?
   class      Class    @relation(fields: [classId], references: [id])
   subject    Subject  @relation(fields: [subjectId], references: [id])
