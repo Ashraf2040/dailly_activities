@@ -304,7 +304,7 @@ export default function AdminDashboard() {
           </style>
         </head>
         <body>
-          <h1>Daily Academic Plan for ${className} - ${dateStr}</h1>
+          <h1>Daily Academic Plan for Grade ${className} - ${dateStr}</h1>
           ${tableContent}
         </body>
       </html>
