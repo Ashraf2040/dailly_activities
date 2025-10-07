@@ -51,6 +51,8 @@ export default function TeacherDashboard() {
     comments: '',
   });
 
+  console.log(session?.user)
+
   // Global pending counter for overlay and disabling buttons
   const [pendingCount, setPendingCount] = useState(0);
   const track = <T,>(p: Promise<T>) => {
@@ -74,9 +76,12 @@ export default function TeacherDashboard() {
     return data;
   };
 
+  //fetch user by session//
+
+
   const teacherId = session?.user?.id as string | undefined;
   const today = useMemo(getTodayStr, []);
-
+ console.log(todayLessons)
   // Load classes, teacher subjects, and today's lessons
   useEffect(() => {
     if (status === 'loading') return;
@@ -207,6 +212,11 @@ export default function TeacherDashboard() {
     }
   };
 
+  console.log(todayLessons)
+  console.log(subjects)
+
+  const todaysTeacherLessons = todayLessons.filter((l) => l.teacherId === teacherId);
+  console.log(todaysTeacherLessons)
   if (status === 'loading') {
     return (
       <div className="min-h-screen grid place-items-center bg-gradient-to-br from-white via-[#f1fbf9] to-[#eaf7f5]">
@@ -398,7 +408,7 @@ export default function TeacherDashboard() {
             </button>
           </div>
 
-          {todayLessons.length === 0 ? (
+          {todaysTeacherLessons?.length === 0 ? (
             <p className="text-sm text-gray-600">No lessons submitted for today yet.</p>
           ) : (
             <div className="overflow-x-auto rounded-xl ring-1 ring-gray-200 shadow-sm">
@@ -417,7 +427,7 @@ export default function TeacherDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {todayLessons.map((row, idx) => {
+                  {todaysTeacherLessons?.map((row, idx) => {
                     const isEditing = editingId === row.id;
                     return (
                       <tr
