@@ -4,37 +4,59 @@ import { NextResponse } from 'next/server';
 export default withAuth(
   function middleware(req) {
     const { pathname } = req.nextUrl;
-    const session = req.nextauth?.token; // Changed from nextAuth to nextauth
+    const token = req.nextauth?.token;
 
-    // If no session or token, redirect to login
-    if (!session) {
+    // Unauthenticated -> login
+    if (!token) {
       return NextResponse.redirect(new URL('/login', req.url));
     }
 
-    const role = session.role;
+    const role = token.role as string | undefined;
 
-    // Protect admin routes
-    if (pathname.startsWith('/admin') && role !== 'ADMIN') {
-      return NextResponse.redirect(new URL('/teacher', req.url));
+    // If coordinator is authenticated, always land on /coordin when hitting root or login
+    // and bounce away from other dashboards.
+    const isRootOrLogin = pathname === '/' || pathname === '/login';
+    const isOtherDash =
+      pathname.startsWith('/admin') || pathname.startsWith('/teacher');
+
+    if (role === 'COORDINATOR' && (isRootOrLogin || isOtherDash)) {
+      return NextResponse.redirect(new URL('/coordin', req.url));
     }
 
-    // Protect teacher routes
+    // Admin routes guard
+    if (pathname.startsWith('/admin') && role !== 'ADMIN') {
+      return NextResponse.redirect(new URL('/', req.url));
+    }
+
+    // Teacher routes guard
     if (pathname.startsWith('/teacher') && role !== 'TEACHER') {
-      return NextResponse.redirect(new URL('/admin', req.url));
+      return NextResponse.redirect(new URL('/', req.url));
+    }
+
+    // Coordinator routes guard
+    // Support both /coordinator and /coordin if you use either
+    if ((pathname.startsWith('/coordinator') || pathname.startsWith('/coordin')) && role !== 'COORDINATOR') {
+      return NextResponse.redirect(new URL('/', req.url));
     }
 
     return NextResponse.next();
   },
   {
     callbacks: {
-      authorized: ({ token }) => !!token,
+      authorized: ({ token }) => !!token, // let handler above manage redirects
     },
   }
 );
 
-// export const config = {
-//   matcher: ['/teacher/:path*', '/admin/:path*'],
-// };
+// Ensure matcher includes all protected prefixes you actually use.
+// If your coordinator route is /coordin, include that. If it's /coordinator, include that too.
 export const config = {
-  matcher: ['/', '/teacher/:path*', '/admin/:path*'],
+  matcher: [
+    '/',
+    '/login',
+    '/admin/:path*',
+    '/teacher/:path*',
+    '/coordin/:path*',
+    '/coordinator/:path*',
+  ],
 };

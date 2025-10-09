@@ -4,15 +4,15 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    
     "start": "next start",
     "lint": "eslint",
-     "postinstall": "prisma generate",
+    "postinstall": "prisma generate",
     "build": "prisma migrate deploy && next build"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",
     "bcryptjs": "^3.0.2",
+    "html2pdf.js": "^0.12.1",
     "jspdf": "^3.0.3",
     "jspdf-autotable": "^5.0.2",
     "next": "15.5.4",
