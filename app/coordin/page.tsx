@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import Image from 'next/image';
 
 type ID = string;
 
@@ -941,10 +942,10 @@ const onPrint = () => {
   <div ref={printRef} className="mx-auto mt-8 w-full rounded-2xl bg-white p-6 shadow-lg ring-1 ring-gray-100 px-8 print-area">
 
             <div className="relative mb-3 rounded-lg border-black p-4 text-center">
-              <img src="/cognia.png" alt="Accreditation badge" className="absolute left-[-18px] top-[-18px] h-24 w-24 rounded-full object-contain" />
-              <img src="/logo.png" alt="School logo" className="absolute right-[-18px] top-[-18px] h-24 w-24 rounded-full object-contain" />
+              <Image src="/cognia.png" alt="Accreditation badge" className="absolute left-[-18px] top-[-18px] h-24 w-24 rounded-full object-contain"  />
+              <Image src="/logo.png" alt="School logo" className="absolute right-[-18px] top-[-18px] h-24 w-24 rounded-full object-contain" />
               <div className="text-2xl font-extrabold">
-                AL FORQAN PRIVATE SCHOOL "AMERICAN DIVISION"
+                AL FORQAN PRIVATE SCHOOL (AMERICAN DIVISION)
                 <br />
                 AL BATOOL INTERNATIONAL SCHOOL
               </div>
