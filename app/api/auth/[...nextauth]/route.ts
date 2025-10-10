@@ -1,4 +1,4 @@
-import NextAuth, { type NextAuthOptions, type Session, type User } from 'next-auth';
+import NextAuth, { type NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { PrismaClient } from '@prisma/client';
 
@@ -7,11 +7,10 @@ export const runtime = 'nodejs';
 
 // Serverless-safe Prisma client pattern
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined };
-export const prisma =
-  globalForPrisma.prisma ?? new PrismaClient();
+export const prisma = globalForPrisma.prisma ?? new PrismaClient();
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
-// Extend types
+// Type augmentation (optional if you already have a global *.d.ts, keep one source of truth)
 declare module 'next-auth' {
   interface Session {
     user: {
@@ -38,7 +37,9 @@ declare module 'next-auth/jwt' {
 }
 
 export const authOptions: NextAuthOptions = {
+  // Ensure NEXTAUTH_URL is set exactly to https://dailly-activities.vercel.app (no trailing slash) in Vercel
   session: { strategy: 'jwt' },
+
   providers: [
     CredentialsProvider({
       name: 'Credentials',
@@ -54,7 +55,7 @@ export const authOptions: NextAuthOptions = {
         });
         if (!user) return null;
 
-        // Plain-text check (for small-scale/local use)
+        // Plain-text check for your current setup; replace with hashing in production
         if (user.password !== credentials.password) return null;
 
         return {
@@ -66,20 +67,45 @@ export const authOptions: NextAuthOptions = {
       },
     }),
   ],
+
+  pages: {
+    signIn: '/login', // Your custom login page
+  },
+
   callbacks: {
+    // Prevent redirect loops by sanitizing callbackUrl
+    async redirect({ url, baseUrl }) {
+      // If url is relative, resolve it against baseUrl
+      let target: URL;
+      try {
+        target = new URL(url, baseUrl);
+      } catch {
+        return baseUrl;
+      }
+
+      // Disallow returning to /login (breaks nested callbackUrl loops)
+      if (target.pathname === '/login') return baseUrl;
+
+      // Only allow same-origin redirects
+      if (target.origin === baseUrl) return target.toString();
+
+      return baseUrl;
+    },
+
     async jwt({ token, user }) {
       if (user) {
-        token.id = user.id;
-        token.name = user.name;
-        token.username = user.username;
-        token.role = user.role;
+        token.id = (user as any).id;
+        token.name = (user as any).name;
+        token.username = (user as any).username;
+        token.role = (user as any).role;
       }
       return token;
     },
+
     async session({ session, token }) {
-      if (token?.id && token?.name && token?.role && token?.username) {
+      if (token?.id && token?.name && token?.username && token?.role) {
         session.user = {
-          id: token.id,
+          id: token.id as string,
           name: token.name as string,
           username: token.username as string,
           role: token.role as string,
@@ -88,7 +114,6 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
   },
-  pages: { signIn: '/login' },
 };
 
 const handler = NextAuth(authOptions);
