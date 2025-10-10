@@ -6,12 +6,10 @@ export default withAuth(
     const { pathname } = req.nextUrl;
     const token = req.nextauth?.token;
 
-    // Always let NextAuth internal routes pass
-    if (pathname.startsWith('/api/auth')) {
-      return NextResponse.next();
-    }
+    // Never intercept NextAuth internals
+    if (pathname.startsWith('/api/auth')) return NextResponse.next();
 
-    // Unauthenticated -> allow /login, block others to /login (no nested callback)
+    // Unauthenticated users: allow /login to render; redirect others to /login
     if (!token) {
       if (pathname === '/login') return NextResponse.next();
       return NextResponse.redirect(new URL('/login', req.url));
@@ -19,29 +17,26 @@ export default withAuth(
 
     const role = token.role as string | undefined;
 
-    // Land authenticated users on their home when they hit root or login
-    const isRootOrLogin = pathname === '/' || pathname === '/login';
-    if (isRootOrLogin) {
+    // Land authenticated users on their dashboard when they hit root/login
+    if (pathname === '/' || pathname === '/login') {
       if (role === 'ADMIN') return NextResponse.redirect(new URL('/admin', req.url));
       if (role === 'TEACHER') return NextResponse.redirect(new URL('/teacher', req.url));
       if (role === 'COORDINATOR') return NextResponse.redirect(new URL('/coordin', req.url));
       return NextResponse.redirect(new URL('/dashboard', req.url));
     }
 
-    // If coordinator tries to open other dashboards, bounce to /coordin
+    // Coordinators opening other dashboards -> send to /coordin
     if (role === 'COORDINATOR' && (pathname.startsWith('/admin') || pathname.startsWith('/teacher'))) {
       return NextResponse.redirect(new URL('/coordin', req.url));
     }
 
-    // Guards by prefix
+    // Role guards
     if (pathname.startsWith('/admin') && role !== 'ADMIN') {
       return NextResponse.redirect(new URL('/', req.url));
     }
-
     if (pathname.startsWith('/teacher') && role !== 'TEACHER') {
       return NextResponse.redirect(new URL('/', req.url));
     }
-
     if ((pathname.startsWith('/coordinator') || pathname.startsWith('/coordin')) && role !== 'COORDINATOR') {
       return NextResponse.redirect(new URL('/', req.url));
     }
@@ -49,9 +44,7 @@ export default withAuth(
     return NextResponse.next();
   },
   {
-    callbacks: {
-      authorized: ({ token }) => !!token, // simple presence check; redirects handled above
-    },
+    callbacks: { authorized: ({ token }) => !!token },
   }
 );
 
@@ -63,6 +56,6 @@ export const config = {
     '/teacher/:path*',
     '/coordin/:path*',
     '/coordinator/:path*',
-    // Note: do not include '/api/auth' here
+    // do not include '/api/auth'
   ],
 };
