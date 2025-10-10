@@ -108,14 +108,28 @@ const aliasToExampleKey: Record<string, string> = {
 
 const renderWithHighlight = (input?: string) => {
   if (!input) return '';
+
+  // Escape
   let html = input.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // Full-line highlight ::text  -> block with yellow background
   html = html.replace(/^::(.*)$/gm, (_m, p1) => `<div style="background:#fff59d">${p1}</div>`);
+
+  // Inline highlight ==text== -> yellow background
   html = html.replace(/==([\s\S]*?)==/g, (_m, p1) => `<mark style="background:#fff59d">${p1}</mark>`);
-  html = html.replace(/~~([\s\S]*?)~~/g, (_m, p1) => `<mark style="background:#ffb3b3;color:#7a0000">${p1}</mark>`);
+
+  // Inline red ~~text~~ -> red text only (inherits any existing background)
+  html = html.replace(/~~([\s\S]*?)~~/g, (_m, p1) => `<span style="color:#c40000">${p1}</span>`);
+
+  // Bold **text**
   html = html.replace(/\*\*([\s\S]*?)\*\*/g, (_m, p1) => `<strong>${p1}</strong>`);
+
+  // Newlines
   html = html.replace(/\n/g, '<br/>');
+
   return html;
 };
+
 
 const wrapSelectionIn = (ta: HTMLTextAreaElement, delimiter: string) => {
   const { selectionStart, selectionEnd, value } = ta;
@@ -516,7 +530,7 @@ const onPrint = () => {
   const from = form.fromDate ? new Date(form.fromDate).toLocaleDateString('en-GB').replaceAll('/', '-') : '';
   const to = form.toDate ? new Date(form.toDate).toLocaleDateString('en-GB').replaceAll('/', '-') : '';
   const week = form.week || '';
-  const suggested = `${gradeName}-W${week}-${from}_to_${to}`.replace(/\s+/g, '_');
+  const suggested = `Grade(${gradeName})-W${week}-${from}`.replace(/\s+/g, '_');
 
   const originalTitle = document.title;
   document.title = suggested;
@@ -822,109 +836,84 @@ const onPrint = () => {
                 onChange={(e) => setNotes(e.target.value)}
                 rows={3}
                 className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-[#83c5be] focus:ring-2 focus:ring-[#83c5be]"
-                placeholder="Use **bold**, ==yellow==, ~~red~~ or ::Full line highlight"
+                // placeholder="Use **bold**, ==yellow==, ~~red~~ or ::Full line highlight"
               />
             </div>
 
-            {assignedSubjects.length > 0 && (
-              <div className="space-y-6">
-                {assignedSubjects.map((sub) => {
-                  const data = planData[sub.id] || { unit: '', lessons: '', pages: '', homework: '', classwork: '' };
-                  const dir = isArabicBlock(sub.name) ? 'rtl' : 'ltr';
-                  return (
-                    <div key={sub.id} className="rounded-lg border border-gray-200 p-4">
-                      <h3 className="mb-3 text-lg font-medium text-[#064e4f]" style={{ direction: dir }}>
-                        {toDisplayName(sub.name)}
-                      </h3>
+           {assignedSubjects.length > 0 && (
+  <div className="space-y-6">
+    {[...assignedSubjects.filter((s) => !isArabicBlock(s.name)), ...assignedSubjects.filter((s) => isArabicBlock(s.name))].map((sub) => {
+      const data = planData[sub.id] || { lessons: '', homework: '', classwork: '' };
+      const dir: 'rtl' | 'ltr' = isArabicBlock(sub.name) ? 'rtl' : 'ltr';
 
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                        <div data-field-container>
-                          <div className="flex items-center justify-between">
-                            <label className="mb-1 block text-sm font-medium text-gray-700">Unit</label>
-                            <Toolbar subId={sub.id} field="unit" />
-                          </div>
-                          <textarea
-                            ref={(el) => { areaRefs.current[refKey(sub.id, 'unit')] = el; }}
-                            value={data.unit}
-                            onChange={(e) => handlePlanChange(sub.id, 'unit', e)}
-                            rows={4}
-                            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-[#83c5be] focus:ring-2 focus:ring-[#83c5be]"
-                            style={{ direction: dir }}
-                            placeholder="Use **bold**, ==yellow==, ~~red~~ or ::Full line highlight"
-                          />
-                        </div>
+      return (
+        <div key={sub.id} className="rounded-lg border border-gray-200 p-4">
+          <h3 className="mb-3 text-lg font-medium text-[#064e4f]" style={{ direction: dir }}>
+            {toDisplayName(sub.name)}
+          </h3>
 
-                        <div data-field-container>
-                          <div className="flex items-center justify-between">
-                            <label className="mb-1 block text-sm font-medium text-gray-700">Lessons</label>
-                            <Toolbar subId={sub.id} field="lessons" />
-                          </div>
-                          <textarea
-                            ref={(el) => { areaRefs.current[refKey(sub.id, 'lessons')] = el; }}
-                            value={data.lessons}
-                            onChange={(e) => handlePlanChange(sub.id, 'lessons', e)}
-                            rows={4}
-                            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-[#83c5be] focus:ring-2 focus:ring-[#83c5be]"
-                            style={{ direction: dir }}
-                            placeholder="Use **bold**, ==yellow==, ~~red~~ or ::Full line highlight"
-                          />
-                        </div>
-
-                        <div data-field-container>
-                          <div className="flex items-center justify-between">
-                            <label className="mb-1 block text-sm font-medium text-gray-700">Page Number</label>
-                            <Toolbar subId={sub.id} field="pages" />
-                          </div>
-                          <textarea
-                            ref={(el) => { areaRefs.current[refKey(sub.id, 'pages')] = el; }}
-                            value={data.pages}
-                            onChange={(e) => handlePlanChange(sub.id, 'pages', e)}
-                            rows={4}
-                            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-[#83c5be] focus:ring-2 focus:ring-[#83c5be]"
-                            style={{ direction: dir }}
-                            placeholder="Use **bold**, ==yellow==, ~~red~~ or ::Full line highlight"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <div data-field-container>
-                          <div className="flex items-center justify-between">
-                            <label className="mb-1 block text-sm font-medium text-gray-700">Homework</label>
-                            <Toolbar subId={sub.id} field="homework" />
-                          </div>
-                          <textarea
-                            ref={(el) => { areaRefs.current[refKey(sub.id, 'homework')] = el; }}
-                            value={data.homework}
-                            onChange={(e) => handlePlanChange(sub.id, 'homework', e)}
-                            rows={4}
-                            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-[#83c5be] focus:ring-2 focus:ring-[#83c5be]"
-                            style={{ direction: dir }}
-                            placeholder="Use **bold**, ==yellow==, ~~red~~ or ::Full line highlight"
-                          />
-                        </div>
-
-                        <div data-field-container>
-                          <div className="flex items-center justify-between">
-                            <label className="mb-1 block text-sm font-medium text-gray-700">Class work</label>
-                            <Toolbar subId={sub.id} field="classwork" />
-                          </div>
-                          <textarea
-                            ref={(el) => { areaRefs.current[refKey(sub.id, 'classwork')] = el; }}
-                            value={data.classwork}
-                            onChange={(e) => handlePlanChange(sub.id, 'classwork', e)}
-                            rows={4}
-                            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-[#83c5be] focus:ring-2 focus:ring-[#83c5be]"
-                            style={{ direction: dir }}
-                            placeholder="Use **bold**, ==yellow==, ~~red~~ or ::Full line highlight"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+          {/* One grid row: Lessons | Homework | Class work */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-12" dir={dir}>
+            {/* Lessons */}
+            <div data-field-container className="md:col-span-4">
+              <div className="mb-1 flex items-center justify-between">
+                <label className="block text-sm font-medium text-gray-700">
+                  {dir === 'rtl' ? '[translate:الدروس]' : 'Lessons'}
+                </label>
+                <Toolbar subId={sub.id} field="lessons" />
               </div>
-            )}
+              <textarea
+                ref={(el) => { areaRefs.current[refKey(sub.id, 'lessons')] = el; }}
+                value={data.lessons}
+                onChange={(e) => handlePlanChange(sub.id, 'lessons', e)}
+                rows={5}
+                className={`block w-full rounded-lg border border-gray-300 px-3 py-2 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-[#83c5be] focus:ring-2 focus:ring-[#83c5be] ${dir === 'rtl' ? 'text-right' : ''}`}
+                style={{ direction: dir }}
+              />
+            </div>
+
+            {/* Homework */}
+            <div data-field-container className="md:col-span-4">
+              <div className="mb-1 flex items-center justify-between">
+                <label className="block text-sm font-medium text-gray-700">
+                  {dir === 'rtl' ? '[translate:الواجب]' : 'Homework'}
+                </label>
+                <Toolbar subId={sub.id} field="homework" />
+              </div>
+              <textarea
+                ref={(el) => { areaRefs.current[refKey(sub.id, 'homework')] = el; }}
+                value={data.homework}
+                onChange={(e) => handlePlanChange(sub.id, 'homework', e)}
+                rows={5}
+                className={`block w-full rounded-lg border border-gray-300 px-3 py-2 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-[#83c5be] focus:ring-2 focus:ring-[#83c5be] ${dir === 'rtl' ? 'text-right' : ''}`}
+                style={{ direction: dir }}
+              />
+            </div>
+
+            {/* Class work */}
+            <div data-field-container className="md:col-span-4">
+              <div className="mb-1 flex items-center justify-between">
+                <label className="block text-sm font-medium text-gray-700">
+                  {dir === 'rtl' ? '[translate:عمل الحصة]' : 'Class work'}
+                </label>
+                <Toolbar subId={sub.id} field="classwork" />
+              </div>
+              <textarea
+                ref={(el) => { areaRefs.current[refKey(sub.id, 'classwork')] = el; }}
+                value={data.classwork}
+                onChange={(e) => handlePlanChange(sub.id, 'classwork', e)}
+                rows={5}
+                className={`block w-full rounded-lg border border-gray-300 px-3 py-2 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-[#83c5be] focus:ring-2 focus:ring-[#83c5be] ${dir === 'rtl' ? 'text-right' : ''}`}
+                style={{ direction: dir }}
+              />
+            </div>
+          </div>
+        </div>
+      );
+    })}
+  </div>
+)}
+
 
             <button
               type="submit"
@@ -942,8 +931,20 @@ const onPrint = () => {
   <div ref={printRef} className="mx-auto mt-8 w-full rounded-2xl bg-white p-6 shadow-lg ring-1 ring-gray-100 px-8 print-area">
 
             <div className="relative mb-3 rounded-lg border-black p-4 text-center">
-              <Image src="/cognia.png" alt="Accreditation badge" className="absolute left-[-18px] top-[-18px] h-24 w-24 rounded-full object-contain"  />
-              <Image src="/logo.png" alt="School logo" className="absolute right-[-18px] top-[-18px] h-24 w-24 rounded-full object-contain" />
+              <Image
+    src="/cognia.png"
+    alt="Accreditation badge"
+    width={96}
+    height={96}
+    className="absolute left-[-18px] top-[-18px] rounded-full object-contain"
+  />
+  <Image
+    src="/logo.png"
+    alt="School logo"
+    width={96}
+    height={96}
+    className="absolute right-[-18px] top-[-18px] rounded-full object-contain"
+  />
               <div className="text-2xl font-extrabold">
                 AL FORQAN PRIVATE SCHOOL (AMERICAN DIVISION)
                 <br />
@@ -978,38 +979,44 @@ const onPrint = () => {
                       <td className="border-2 border-black px-3 py-2 align-top">
                         <div dangerouslySetInnerHTML={{ __html: renderWithHighlight(classWorkText) }} />
                       </td>
-                      <td className="border-2 border-black px-3 py-2 align-top">
+                      <td className="border-2 border-black px-3 py-2 align-top text-center">
                         <div dangerouslySetInnerHTML={{ __html: renderWithHighlight(activityText) }} />
                       </td>
                     </tr>
                   );
                 })}
 
-                {/* Worksheet header row */}
-                <tr>
-                  <td className="border-2 border-black px-3 py-2"></td>
-                  <td className="border-2 border-black px-3 py-2"></td>
-                  <td className="border-2 border-black px-3 py-2 text-center font-bold">Worksheet</td>
-                </tr>
+               
 
                 {/* Arabic rows */}
                 {arabicSubs.map((sub, idx) => {
-                  const d = planData[sub.id] || { unit: '', lessons: '', pages: '', homework: '', classwork: '' };
-                  const rightText = [d.unit, d.lessons, d.homework, d.classwork].filter(Boolean).join(' — ');
-                  return (
-                    <tr key={sub.id} className={idx % 2 === 0 ? 'bg-gray-100' : 'bg-white'}>
-                      <td className="border-2 border-black px-3 py-2 font-bold text-xl text-center" dir="rtl">
-                        {toDisplayName(sub.name)}
-                      </td>
-                      <td className="border-2 border-black px-3 py-2 align-top" dir="rtl">
-                        <div className="font-semibold text-xl" dangerouslySetInnerHTML={{ __html: renderWithHighlight(d.pages || '') }} />
-                      </td>
-                      <td className="border-2 border-black px-3 py-2 align-top" dir="rtl">
-                        <div className="font-semibold text-xl" dangerouslySetInnerHTML={{ __html: renderWithHighlight(rightText) }} />
-                      </td>
-                    </tr>
-                  );
-                })}
+  const d = planData[sub.id] || { unit: '', lessons: '', pages: '', homework: '', classwork: '' };
+
+  // Left cell: subject name (RTL)
+  const subjectCell = (
+    <td className="border-2 border-black px-3 py-2 font-bold text-xl text-center" dir="rtl">
+      {toDisplayName(sub.name)}
+    </td>
+  );
+
+  // Right cell: combine pages (worksheet), then the rest in one flow (RTL)
+  const rightHtml = [
+    d.pages && renderWithHighlight(d.pages),
+    renderWithHighlight([d.unit, d.lessons, d.homework, d.classwork].filter(Boolean).join(' — '))
+  ]
+  .filter(Boolean)
+  .join('<br/>');
+
+  return (
+    <tr key={sub.id} className={idx % 2 === 0 ? 'bg-gray-100' : 'bg-white'}>
+      {subjectCell}
+      <td className="border-2 border-black px-3 py-2 align-top" dir="rtl" colSpan={2}>
+        <div className="font-semibold text-xl" dangerouslySetInnerHTML={{ __html: rightHtml }} />
+      </td>
+    </tr>
+  );
+})}
+
               </tbody>
             </table>
 

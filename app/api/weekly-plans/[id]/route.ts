@@ -3,6 +3,28 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+export async function GET(
+  _req: NextRequest,
+  ctx: { params: Promise<{ id: string }> }
+) {
+  const { id } = await ctx.params;
+  if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
+
+  try {
+    const plan = await prisma.weeklyPlan.findUnique({
+      where: { id },
+      include: { grade: true, items: { include: { subject: true } } },
+    });
+    if (!plan) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    return NextResponse.json(plan, { status: 200 });
+  } catch (e) {
+    console.error(e);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
 export async function DELETE(
   _req: NextRequest,
   ctx: { params: Promise<{ id: string }> }
@@ -18,6 +40,45 @@ export async function DELETE(
     if (e?.code === 'P2025') {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
+    console.error(e);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+export async function PUT(
+  request: NextRequest,
+  ctx: { params: Promise<{ id: string }> }
+) {
+  const { id } = await ctx.params;
+  if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
+
+  try {
+    const body = await request.json();
+    const { gradeId, week, fromDate, toDate, items } = body;
+
+    const updated = await prisma.weeklyPlan.update({
+      where: { id },
+      data: {
+        gradeId,
+        week,
+        fromDate: new Date(fromDate),
+        toDate: new Date(toDate),
+        items: {
+          deleteMany: { weeklyPlanId: id },
+          create: (items || []).map((item: any) => ({
+            subjectId: item.subjectId,
+            unit: item.unit ?? '',
+            lessons: item.lessons ?? '',
+            pages: item.pages ?? '',
+          })),
+        },
+      },
+      include: { grade: true, items: { include: { subject: true } } },
+    });
+
+    return NextResponse.json(updated, { status: 200 });
+  } catch (e) {
     console.error(e);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   } finally {
