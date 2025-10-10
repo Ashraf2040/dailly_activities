@@ -6,36 +6,40 @@ export default withAuth(
     const { pathname } = req.nextUrl;
     const token = req.nextauth?.token;
 
-    // Don’t intercept NextAuth internals
-    if (pathname.startsWith('/api/auth')) return NextResponse.next();
+    // Exclude NextAuth and static assets
+    if (
+      pathname.startsWith('/api/auth') ||
+      pathname.startsWith('/_next') ||
+      pathname.startsWith('/favicon') ||
+      pathname.startsWith('/static')
+    ) {
+      return NextResponse.next();
+    }
 
-    // Normalize trailing slash
+    // Remove trailing slashes
     if (pathname !== '/' && pathname.endsWith('/')) {
       const url = new URL(req.url);
       url.pathname = pathname.replace(/\/+$/, '');
       return NextResponse.redirect(url);
     }
 
-    // Unauthenticated: allow /login only
+    // If not authenticated
     if (!token) {
       if (pathname === '/login') return NextResponse.next();
-      return NextResponse.redirect(new URL('/login', req.url));
+
+      const loginUrl = new URL('/login', req.url);
+      loginUrl.searchParams.set('callbackUrl', '/'); // Prevent recursive nesting
+      return NextResponse.redirect(loginUrl);
     }
 
-    const role = (token as any)?.role as string | undefined;
+    const role = (token as any)?.role;
 
-    // Already on correct dashboard? Do nothing.
-    if (role === 'ADMIN' && (pathname === '/admin' || pathname.startsWith('/admin/'))) {
-      return NextResponse.next();
-    }
-    if (role === 'TEACHER' && (pathname === '/teacher' || pathname.startsWith('/teacher/'))) {
-      return NextResponse.next();
-    }
-    if (role === 'COORDINATOR' && (pathname === '/coordin' || pathname.startsWith('/coordin/'))) {
-      return NextResponse.next();
-    }
+    // Already on correct dashboard
+    if (role === 'ADMIN' && pathname.startsWith('/admin')) return NextResponse.next();
+    if (role === 'TEACHER' && pathname.startsWith('/teacher')) return NextResponse.next();
+    if (role === 'COORDINATOR' && pathname.startsWith('/coordin')) return NextResponse.next();
 
-    // Landing on neutral pages -> go to role home once
+    // If landing on neutral pages, redirect to role dashboard
     if (pathname === '/' || pathname === '/login') {
       if (role === 'ADMIN') return NextResponse.redirect(new URL('/admin', req.url));
       if (role === 'TEACHER') return NextResponse.redirect(new URL('/teacher', req.url));
@@ -43,12 +47,15 @@ export default withAuth(
       return NextResponse.redirect(new URL('/dashboard', req.url));
     }
 
-    // Bounce coordinators away from other dashboards
-    if (role === 'COORDINATOR' && (pathname.startsWith('/admin') || pathname.startsWith('/teacher'))) {
+    // Coordinator blocked from admin/teacher
+    if (
+      role === 'COORDINATOR' &&
+      (pathname.startsWith('/admin') || pathname.startsWith('/teacher'))
+    ) {
       return NextResponse.redirect(new URL('/coordin', req.url));
     }
 
-    // Guards
+    // Guard other dashboards
     if (pathname.startsWith('/admin') && role !== 'ADMIN') {
       return NextResponse.redirect(new URL('/', req.url));
     }
@@ -61,15 +68,13 @@ export default withAuth(
 
     return NextResponse.next();
   },
-  { callbacks: { authorized: ({ token }) => !!token } }
+  {
+    callbacks: {
+      authorized: ({ token }) => !!token,
+    },
+  }
 );
 
 export const config = {
-  matcher: [
-    '/',
-    '/login',
-    '/admin/:path*',
-    '/teacher/:path*',
-    '/coordin/:path*',
-  ],
+  matcher: ['/', '/login', '/admin/:path*', '/teacher/:path*', '/coordin/:path*'],
 };
