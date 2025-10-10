@@ -6,35 +6,42 @@ export default withAuth(
     const { pathname } = req.nextUrl;
     const token = req.nextauth?.token;
 
-    // Unauthenticated -> login
+    // Always let NextAuth internal routes pass
+    if (pathname.startsWith('/api/auth')) {
+      return NextResponse.next();
+    }
+
+    // Unauthenticated -> allow /login, block others to /login (no nested callback)
     if (!token) {
+      if (pathname === '/login') return NextResponse.next();
       return NextResponse.redirect(new URL('/login', req.url));
     }
 
     const role = token.role as string | undefined;
 
-    // If coordinator is authenticated, always land on /coordin when hitting root or login
-    // and bounce away from other dashboards.
+    // Land authenticated users on their home when they hit root or login
     const isRootOrLogin = pathname === '/' || pathname === '/login';
-    const isOtherDash =
-      pathname.startsWith('/admin') || pathname.startsWith('/teacher');
+    if (isRootOrLogin) {
+      if (role === 'ADMIN') return NextResponse.redirect(new URL('/admin', req.url));
+      if (role === 'TEACHER') return NextResponse.redirect(new URL('/teacher', req.url));
+      if (role === 'COORDINATOR') return NextResponse.redirect(new URL('/coordin', req.url));
+      return NextResponse.redirect(new URL('/dashboard', req.url));
+    }
 
-    if (role === 'COORDINATOR' && (isRootOrLogin || isOtherDash)) {
+    // If coordinator tries to open other dashboards, bounce to /coordin
+    if (role === 'COORDINATOR' && (pathname.startsWith('/admin') || pathname.startsWith('/teacher'))) {
       return NextResponse.redirect(new URL('/coordin', req.url));
     }
 
-    // Admin routes guard
+    // Guards by prefix
     if (pathname.startsWith('/admin') && role !== 'ADMIN') {
       return NextResponse.redirect(new URL('/', req.url));
     }
 
-    // Teacher routes guard
     if (pathname.startsWith('/teacher') && role !== 'TEACHER') {
       return NextResponse.redirect(new URL('/', req.url));
     }
 
-    // Coordinator routes guard
-    // Support both /coordinator and /coordin if you use either
     if ((pathname.startsWith('/coordinator') || pathname.startsWith('/coordin')) && role !== 'COORDINATOR') {
       return NextResponse.redirect(new URL('/', req.url));
     }
@@ -43,13 +50,11 @@ export default withAuth(
   },
   {
     callbacks: {
-      authorized: ({ token }) => !!token, // let handler above manage redirects
+      authorized: ({ token }) => !!token, // simple presence check; redirects handled above
     },
   }
 );
 
-// Ensure matcher includes all protected prefixes you actually use.
-// If your coordinator route is /coordin, include that. If it's /coordinator, include that too.
 export const config = {
   matcher: [
     '/',
@@ -58,5 +63,6 @@ export const config = {
     '/teacher/:path*',
     '/coordin/:path*',
     '/coordinator/:path*',
+    // Note: do not include '/api/auth' here
   ],
 };
