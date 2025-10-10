@@ -6,18 +6,36 @@ export default withAuth(
     const { pathname } = req.nextUrl;
     const token = req.nextauth?.token;
 
-    // Never intercept NextAuth internals
+    // Do not intercept NextAuth internals
     if (pathname.startsWith('/api/auth')) return NextResponse.next();
 
-    // Unauthenticated users: allow /login to render; redirect others to /login
+    // Normalize trailing slash to avoid redirect bounces
+    if (pathname !== '/' && pathname.endsWith('/')) {
+      const url = new URL(req.url);
+      url.pathname = pathname.replace(/\/+$/, '');
+      return NextResponse.redirect(url);
+    }
+
+    // Unauthenticated: allow /login, block others
     if (!token) {
       if (pathname === '/login') return NextResponse.next();
       return NextResponse.redirect(new URL('/login', req.url));
     }
 
-    const role = token.role as string | undefined;
+    const role = (token as any)?.role as string | undefined;
 
-    // Land authenticated users on their dashboard when they hit root/login
+    // Already on the correct dashboard? Do nothing.
+    if (role === 'ADMIN' && (pathname === '/admin' || pathname.startsWith('/admin/'))) {
+      return NextResponse.next();
+    }
+    if (role === 'TEACHER' && (pathname === '/teacher' || pathname.startsWith('/teacher/'))) {
+      return NextResponse.next();
+    }
+    if (role === 'COORDINATOR' && (pathname === '/coordin' || pathname.startsWith('/coordin/'))) {
+      return NextResponse.next();
+    }
+
+    // Landing on neutral pages -> go to role home once
     if (pathname === '/' || pathname === '/login') {
       if (role === 'ADMIN') return NextResponse.redirect(new URL('/admin', req.url));
       if (role === 'TEACHER') return NextResponse.redirect(new URL('/teacher', req.url));
@@ -25,19 +43,19 @@ export default withAuth(
       return NextResponse.redirect(new URL('/dashboard', req.url));
     }
 
-    // Coordinators opening other dashboards -> send to /coordin
+    // Coordinators trying other dashboards -> push to /coordin
     if (role === 'COORDINATOR' && (pathname.startsWith('/admin') || pathname.startsWith('/teacher'))) {
       return NextResponse.redirect(new URL('/coordin', req.url));
     }
 
-    // Role guards
+    // Guards by prefix
     if (pathname.startsWith('/admin') && role !== 'ADMIN') {
       return NextResponse.redirect(new URL('/', req.url));
     }
     if (pathname.startsWith('/teacher') && role !== 'TEACHER') {
       return NextResponse.redirect(new URL('/', req.url));
     }
-    if ((pathname.startsWith('/coordinator') || pathname.startsWith('/coordin')) && role !== 'COORDINATOR') {
+    if (pathname.startsWith('/coordin') && role !== 'COORDINATOR') {
       return NextResponse.redirect(new URL('/', req.url));
     }
 
@@ -54,8 +72,6 @@ export const config = {
     '/login',
     '/admin/:path*',
     '/teacher/:path*',
-    '/coordin/:path*',
-    '/coordinator/:path*',
-    // do not include '/api/auth'
+    '/coordin/:path*', // only this prefix
   ],
 };
