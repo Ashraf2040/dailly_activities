@@ -6,17 +6,17 @@ export default withAuth(
     const { pathname } = req.nextUrl;
     const token = req.nextauth?.token;
 
-    // Do not intercept NextAuth internals
+    // Don’t intercept NextAuth internals
     if (pathname.startsWith('/api/auth')) return NextResponse.next();
 
-    // Normalize trailing slash to avoid redirect bounces
+    // Normalize trailing slash
     if (pathname !== '/' && pathname.endsWith('/')) {
       const url = new URL(req.url);
       url.pathname = pathname.replace(/\/+$/, '');
       return NextResponse.redirect(url);
     }
 
-    // Unauthenticated: allow /login, block others
+    // Unauthenticated: allow /login only
     if (!token) {
       if (pathname === '/login') return NextResponse.next();
       return NextResponse.redirect(new URL('/login', req.url));
@@ -24,7 +24,7 @@ export default withAuth(
 
     const role = (token as any)?.role as string | undefined;
 
-    // Already on the correct dashboard? Do nothing.
+    // Already on correct dashboard? Do nothing.
     if (role === 'ADMIN' && (pathname === '/admin' || pathname.startsWith('/admin/'))) {
       return NextResponse.next();
     }
@@ -43,12 +43,12 @@ export default withAuth(
       return NextResponse.redirect(new URL('/dashboard', req.url));
     }
 
-    // Coordinators trying other dashboards -> push to /coordin
+    // Bounce coordinators away from other dashboards
     if (role === 'COORDINATOR' && (pathname.startsWith('/admin') || pathname.startsWith('/teacher'))) {
       return NextResponse.redirect(new URL('/coordin', req.url));
     }
 
-    // Guards by prefix
+    // Guards
     if (pathname.startsWith('/admin') && role !== 'ADMIN') {
       return NextResponse.redirect(new URL('/', req.url));
     }
@@ -61,9 +61,7 @@ export default withAuth(
 
     return NextResponse.next();
   },
-  {
-    callbacks: { authorized: ({ token }) => !!token },
-  }
+  { callbacks: { authorized: ({ token }) => !!token } }
 );
 
 export const config = {
@@ -72,6 +70,6 @@ export const config = {
     '/login',
     '/admin/:path*',
     '/teacher/:path*',
-    '/coordin/:path*', // only this prefix
+    '/coordin/:path*',
   ],
 };
