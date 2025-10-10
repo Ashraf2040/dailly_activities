@@ -6,15 +6,8 @@ export default withAuth(
     const { pathname } = req.nextUrl;
     const token = req.nextauth?.token;
 
-    // Exclude NextAuth and static assets
-    if (
-      pathname.startsWith('/api/auth') ||
-      pathname.startsWith('/_next') ||
-      pathname.startsWith('/favicon') ||
-      pathname.startsWith('/static')
-    ) {
-      return NextResponse.next();
-    }
+    // Allow NextAuth internal routes
+    if (pathname.startsWith('/api/auth')) return NextResponse.next();
 
     // Remove trailing slashes
     if (pathname !== '/' && pathname.endsWith('/')) {
@@ -25,21 +18,21 @@ export default withAuth(
 
     // If not authenticated
     if (!token) {
+      // Allow access to login page
       if (pathname === '/login') return NextResponse.next();
 
-      const loginUrl = new URL('/login', req.url);
-      loginUrl.searchParams.set('callbackUrl', '/'); // Prevent recursive nesting
-      return NextResponse.redirect(loginUrl);
+      // Redirect others to login without nested callbackUrl
+      return NextResponse.redirect(new URL('/login', req.url));
     }
 
-    const role = (token as any)?.role;
+    const role = (token as any)?.role as string | undefined;
 
-    // Already on correct dashboard
+    // Already in correct dashboard
     if (role === 'ADMIN' && pathname.startsWith('/admin')) return NextResponse.next();
     if (role === 'TEACHER' && pathname.startsWith('/teacher')) return NextResponse.next();
     if (role === 'COORDINATOR' && pathname.startsWith('/coordin')) return NextResponse.next();
 
-    // If landing on neutral pages, redirect to role dashboard
+    // Redirect neutral pages to role-based dashboards
     if (pathname === '/' || pathname === '/login') {
       if (role === 'ADMIN') return NextResponse.redirect(new URL('/admin', req.url));
       if (role === 'TEACHER') return NextResponse.redirect(new URL('/teacher', req.url));
@@ -47,15 +40,12 @@ export default withAuth(
       return NextResponse.redirect(new URL('/dashboard', req.url));
     }
 
-    // Coordinator blocked from admin/teacher
-    if (
-      role === 'COORDINATOR' &&
-      (pathname.startsWith('/admin') || pathname.startsWith('/teacher'))
-    ) {
+    // Prevent COORDINATOR from accessing others
+    if (role === 'COORDINATOR' && (pathname.startsWith('/admin') || pathname.startsWith('/teacher'))) {
       return NextResponse.redirect(new URL('/coordin', req.url));
     }
 
-    // Guard other dashboards
+    // Guard routes
     if (pathname.startsWith('/admin') && role !== 'ADMIN') {
       return NextResponse.redirect(new URL('/', req.url));
     }
@@ -76,5 +66,11 @@ export default withAuth(
 );
 
 export const config = {
-  matcher: ['/', '/login', '/admin/:path*', '/teacher/:path*', '/coordin/:path*'],
+  matcher: [
+    '/',
+    '/login',
+    '/admin/:path*',
+    '/teacher/:path*',
+    '/coordin/:path*',
+  ],
 };

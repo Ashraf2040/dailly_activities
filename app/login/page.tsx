@@ -1,6 +1,7 @@
 'use client';
+
 import { useState } from 'react';
-import { signIn, getSession } from 'next-auth/react';
+import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 
 export default function Login() {
@@ -16,6 +17,7 @@ export default function Login() {
       redirect: false,
       username,
       password,
+      callbackUrl: '/', // clean callback to prevent nesting
     });
 
     if (result?.error) {
@@ -23,10 +25,8 @@ export default function Login() {
       return;
     }
 
-    const session = await getSession();
-    const role = session?.user?.role;
-    if (role === 'ADMIN') router.push('/admin');
-    else router.push('/teacher');
+    // Let middleware handle redirection based on role
+    router.push('/');
   };
 
   return (
