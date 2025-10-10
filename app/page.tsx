@@ -1,13 +1,24 @@
 'use client';
+import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect } from 'react';
-
+import { useRouter } from 'next/navigation';
 export default function Home() {
   useEffect(() => {
     console.log('Home page loaded');
   }, []);
+const { data: session, status } = useSession();
+  const router = useRouter();
 
+  useEffect(() => {
+    if (status !== 'authenticated') return;
+    const role = (session?.user as any)?.role;
+    if (role === 'COORDINATOR') router.replace('/coordin');
+    if (role === 'TEACHER') router.replace('/teacher');
+    if (role === 'ADMIN') router.replace('/admin');
+    // Optionally handle ADMIN/TEACHER similarly
+  }, [status, session, router])
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-white via-[#f1fbf9] to-[#eaf7f5] px-4 py-10 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-5xl text-center">
