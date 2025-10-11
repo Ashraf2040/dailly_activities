@@ -1,60 +1,65 @@
-// app/api/users/[id]/route.ts
-import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+// app/api/admin/teachers/[id]/route.ts
+import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+// import bcrypt from 'bcryptjs'; // if hashing
+const prisma = new PrismaClient();
+export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+  const { id } = params;
 
-// Ensure Node.js runtime for Prisma on Vercel
-export const runtime = 'nodejs';
-
-// Serverless-safe Prisma client reuse
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
-const prisma = globalForPrisma.prisma ?? new PrismaClient();
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
-
-export async function DELETE(req: NextRequest, { params }: { params: { id?: string } }) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session || session.user?.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const body = await req.json();
+
+    // Accept partial updates; only set what comes in
+    const {
+      username,
+      name,
+      password,
+      classIds,
+      subjectIds,
+    }: {
+      username?: string;
+      name?: string;
+      password?: string;
+      classIds?: string[];
+      subjectIds?: string[];
+    } = body || {};
+
+    const data: any = {};
+
+    if (typeof username === 'string') data.username = username;
+    if (typeof name === 'string') data.name = name;
+
+    // Optional password update
+    if (typeof password === 'string' && password.trim().length > 0) {
+      // const hash = await bcrypt.hash(password.trim(), 10);
+      // data.password = hash;
+      data.password = password.trim(); // keep your existing logic if hashing is not used yet
     }
 
-    // Prefer params.id; fall back to parsing from URL if needed
-    let id = params?.id;
-    if (!id) {
-      const { pathname } = req.nextUrl;
-      const segments = pathname.split('/');
-      id = segments[segments.length - 1] || undefined;
+    // Replace class links if provided (adds missing, removes absent)
+    if (Array.isArray(classIds)) {
+      data.classes = { set: classIds.map((id: string) => ({ id })) };
     }
 
-    if (!id) {
-      return NextResponse.json({ error: 'ID is required' }, { status: 400 });
+    // Replace subject links if provided (adds missing, removes absent)
+    if (Array.isArray(subjectIds)) {
+      data.subjects = { set: subjectIds.map((id: string) => ({ id })) };
     }
 
-    // Verify user exists
-    const user = await prisma.user.findUnique({ where: { id } });
-    if (!user) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    }
-
-    // Clean up dependent records to avoid FK errors (adjust to your schema)
-    // Example: if lessons reference teacherId -> user.id
-    await prisma.$transaction(async (tx) => {
-      // If lessons model uses teacherId referencing User(id), delete them first
-      await tx.lesson.deleteMany({ where: { teacherId: id } }).catch(() => {});
-
-      // If there are join tables for classes/subjects assigned to teachers, delete them here
-      // Replace with actual model names or remove if not applicable:
-      // await tx.teacherClasses.deleteMany({ where: { teacherId: id } });
-      // await tx.teacherSubjects.deleteMany({ where: { teacherId: id } });
-
-      // Finally delete the user
-      await tx.user.delete({ where: { id } });
+    const updated = await prisma.user.update({
+      where: { id },
+      data,
+      include: {
+        classes: true,
+        subjects: true,
+      },
     });
 
-    return NextResponse.json({ success: true }, { status: 200 });
-  } catch (error) {
-    console.error('Error deleting user:', error);
-    return NextResponse.json({ error: 'Failed to delete user' }, { status: 500 });
+    return NextResponse.json(updated, { status: 200 });
+  } catch (err: any) {
+    // keep your existing error shape/status if you already have one
+    const message =
+      err?.message || 'Failed to update teacher';
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }

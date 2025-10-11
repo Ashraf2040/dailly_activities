@@ -15,6 +15,8 @@ export default function AdminDashboard() {
   const [subjects, setSubjects] = useState<any[]>([]);
   const [lessons, setLessons] = useState<any[]>([]);
   const [filter, setFilter] = useState({ classId: '', date: '' });
+const [editingTeacher, setEditingTeacher] = useState<any | null>(null); // the teacher object being edited [web:6]
+const [showEditModal, setShowEditModal] = useState(false); // modal toggle [web:2]
 
   const [newTeacher, setNewTeacher] = useState({
     username: '',
@@ -199,6 +201,49 @@ export default function AdminDashboard() {
       // toast already shown
     }
   };
+const handleUpdateTeacher = async (payload: {
+  id: string;
+  username: string;
+  name: string;
+  password?: string;
+  classIds: string[];
+  subjectIds: string[];
+}) => {
+  const body: any = {
+    username: payload.username,
+    name: payload.name,
+    classIds: payload.classIds,
+    subjectIds: payload.subjectIds,
+  };
+  if (payload.password && payload.password.trim().length > 0) {
+    body.password = payload.password;
+  }
+
+  try {
+    await toast.promise(
+      track(
+        (async () => {
+          await fetchJson(`/api/admin/teachers/${payload.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          const t = await fetchJson('/api/admin/teachers');
+          setTeachers(t);
+          setShowEditModal(false);
+          setEditingTeacher(null);
+        })()
+      ),
+      {
+        loading: 'Saving changes…',
+        success: 'Teacher updated',
+        error: (e) => `Failed to update teacher: ${String((e as any)?.message || e)}`,
+      }
+    );
+  } catch {
+    // toast already shown
+  }
+};
 
   const handleDeleteTeacher = async (id: string) => {
     if (!confirm('Are you sure you want to delete this teacher?')) return;
@@ -344,7 +389,14 @@ export default function AdminDashboard() {
           >
             {showTeacherDetails ? 'Hide Teacher Details' : 'Show Teacher Details'}
           </button>
-
+<button
+  onClick={() => router.push('/teacherData')}
+  className="inline-flex items-center justify-center rounded-lg bg-[#0ea5e9] px-4 py-2.5 text-white shadow-sm ring-1 ring-sky-200 transition hover:bg-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2"
+  disabled={pendingCount > 0}
+  title="Export teacher details"
+>
+  Export Teacher Details
+</button>
           <button
             onClick={() => setShowClassForm(!showClassForm)}
             className="inline-flex items-center justify-center rounded-lg border border-[#006d77]/30 bg-white px-4 py-2.5 text-[#006d77] shadow-sm transition hover:bg-[#006d77]/5 focus:outline-none focus:ring-2 focus:ring-[#006d77] focus:ring-offset-2"
@@ -504,7 +556,7 @@ export default function AdminDashboard() {
 
         {/* Teacher List */}
         {showTeacherDetails && (
-          <div className="mx-auto mb-8 max-w-5xl rounded-2xl bg-white p-6 shadow-lg ring-1 ring-gray-100">
+          <div className="mx-auto mb-8 max-w-7xl rounded-2xl bg-white p-6 shadow-lg ring-1 ring-gray-100">
             <h2 className="mb-4 text-xl font-semibold text-[#064e4f]">Teachers</h2>
             <div className="overflow-scroll rounded-xl ring-1 ring-gray-200 shadow-sm">
               <table className="w-full table-auto text-sm">
@@ -533,11 +585,29 @@ export default function AdminDashboard() {
                       <td className="px-4 py-3">{teacher.password ?? '-'}</td>
                       <td className="px-4 py-3">{teacher.classes.map((c: any) => c.name).join(', ')}</td>
                       <td className="px-4 py-3">{teacher.subjects.map((s: any) => s.name).join(', ')}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 flex ">
+                        <button
+      onClick={() => {
+        setEditingTeacher({
+          id: teacher.id,
+          username: teacher.username,
+          name: teacher.name,
+          // do not prefill password to avoid showing hashes or leaking; leave empty to mean unchanged
+          password: '',
+          classIds: (teacher.classes ?? []).map((c:any)=>c.id),
+          subjectIds: (teacher.subjects ?? []).map((s:any)=>s.id),
+        });
+        setShowEditModal(true);
+      }}
+      disabled={pendingCount > 0}
+      className="rounded-md bg-[#0ea5e9] px-3 py-1.5 text-white shadow-sm ring-1 ring-sky-200 transition hover:bg-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2 disabled:opacity-60"
+    >
+      Edit
+    </button>
                         <button
                           onClick={() => handleDeleteTeacher(teacher.id)}
                           disabled={pendingCount > 0}
-                          className="rounded-md bg-[#e29578] px-3 py-1.5 text-white shadow-sm ring-1 ring-[#e29578]/20 transition hover:bg-[#e29578]/90 focus:outline-none focus:ring-2 focus:ring-[#e29578] focus:ring-offset-2 disabled:opacity-60"
+                          className="rounded-md bg-[#e29578] px-3 py-1.5 ml-4 text-white shadow-sm ring-1 ring-[#e29578]/20 transition hover:bg-[#e29578]/90 focus:outline-none focus:ring-2 focus:ring-[#e29578] focus:ring-offset-2 disabled:opacity-60"
                         >
                           Delete
                         </button>
@@ -549,6 +619,272 @@ export default function AdminDashboard() {
             </div>
           </div>
         )}
+{showEditModal && editingTeacher && (
+  <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4">
+    <div className="w-full max-w-3xl rounded-2xl bg-white p-6 shadow-xl ring-1 ring-gray-200">
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-[#064e4f]">Edit Teacher</h3>
+        <button
+          onClick={() => setShowEditModal(false)}
+          className="rounded-md px-2 py-1 text-gray-600 hover:bg-gray-100"
+          aria-label="Close"
+        >
+          ✕
+        </button>
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!editingTeacher) return;
+          void handleUpdateTeacher(editingTeacher);
+        }}
+        className="grid grid-cols-1 gap-6"
+      >
+        {/* Basic info */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">Username</label>
+            <input
+              type="text"
+              value={editingTeacher.username}
+              onChange={(e) => setEditingTeacher({ ...editingTeacher, username: e.target.value })}
+              className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-[#83c5be] focus:ring-2 focus:ring-[#83c5be]"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">Name</label>
+            <input
+              type="text"
+              value={editingTeacher.name}
+              onChange={(e) => setEditingTeacher({ ...editingTeacher, name: e.target.value })}
+              className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-[#83c5be] focus:ring-2 focus:ring-[#83c5be]"
+              required
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <label className="mb-1 block text-sm font-medium text-gray-700">
+              Password <span className="text-gray-400">(leave blank to keep)</span>
+            </label>
+            <input
+              type="password"
+              value={editingTeacher.password}
+              onChange={(e) => setEditingTeacher({ ...editingTeacher, password: e.target.value })}
+              placeholder="Leave empty to keep current password"
+              className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-[#83c5be] focus:ring-2 focus:ring-[#83c5be]"
+            />
+          </div>
+        </div>
+
+        {/* Dual-list: Classes */}
+        <div>
+          <h4 className="mb-2 text-sm font-semibold text-[#064e4f]">Classes</h4>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {/* Available */}
+            <div className="rounded-lg border border-gray-200">
+              <div className="px-3 py-2 text-sm font-medium text-gray-600">Available</div>
+              <div className="max-h-44 overflow-auto">
+                {classes
+                  .filter((c:any) => !(editingTeacher.classIds ?? []).includes(c.id))
+                  .map((c:any) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() =>
+                        setEditingTeacher({
+                          ...editingTeacher,
+                          classIds: [...(editingTeacher.classIds ?? []), c.id],
+                        })
+                      }
+                      className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
+                    >
+                      {c.name}
+                    </button>
+                  ))}
+                {classes.filter((c:any) => !(editingTeacher.classIds ?? []).includes(c.id)).length === 0 && (
+                  <div className="px-3 py-2 text-sm text-gray-400">No more classes</div>
+                )}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="grid place-items-center">
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const remaining = classes
+                      .filter((c:any) => !(editingTeacher.classIds ?? []).includes(c.id))
+                      .map((c:any) => c.id);
+                    setEditingTeacher({
+                      ...editingTeacher,
+                      classIds: [...(editingTeacher.classIds ?? []), ...remaining],
+                    });
+                  }}
+                  className="rounded-md bg-[#83c5be] px-3 py-1.5 text-sm text-slate-900 ring-1 ring-[#83c5be]/40"
+                >
+                  Add all →
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingTeacher({ ...editingTeacher, classIds: [] });
+                  }}
+                  className="rounded-md bg-[#e29578] px-3 py-1.5 text-sm text-white ring-1 ring-[#e29578]/20"
+                >
+                  ← Remove all
+                </button>
+              </div>
+            </div>
+
+            {/* Assigned */}
+            <div className="rounded-lg border border-gray-200">
+              <div className="px-3 py-2 text-sm font-medium text-gray-600">Assigned</div>
+              <div className="max-h-44 overflow-auto">
+                {classes
+                  .filter((c:any) => (editingTeacher.classIds ?? []).includes(c.id))
+                  .map((c:any) => (
+                    <div key={c.id} className="flex items-center justify-between px-3 py-2">
+                      <span className="text-sm">{c.name}</span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditingTeacher({
+                            ...editingTeacher,
+                            classIds: (editingTeacher.classIds ?? []).filter((id:string) => id !== c.id),
+                          })
+                        }
+                        className="rounded-md px-2 py-1 text-xs text-rose-700 hover:bg-rose-50"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                {(editingTeacher.classIds ?? []).length === 0 && (
+                  <div className="px-3 py-2 text-sm text-gray-400">No classes assigned</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Dual-list: Subjects */}
+        <div>
+          <h4 className="mb-2 text-sm font-semibold text-[#064e4f]">Subjects</h4>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {/* Available */}
+            <div className="rounded-lg border border-gray-200">
+              <div className="px-3 py-2 text-sm font-medium text-gray-600">Available</div>
+              <div className="max-h-44 overflow-auto">
+                {subjects
+                  .filter((s:any) => !(editingTeacher.subjectIds ?? []).includes(s.id))
+                  .map((s:any) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() =>
+                        setEditingTeacher({
+                          ...editingTeacher,
+                          subjectIds: [...(editingTeacher.subjectIds ?? []), s.id],
+                        })
+                      }
+                      className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
+                    >
+                      {s.name}
+                    </button>
+                  ))}
+                {subjects.filter((s:any) => !(editingTeacher.subjectIds ?? []).includes(s.id)).length === 0 && (
+                  <div className="px-3 py-2 text-sm text-gray-400">No more subjects</div>
+                )}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="grid place-items-center">
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const remaining = subjects
+                      .filter((s:any) => !(editingTeacher.subjectIds ?? []).includes(s.id))
+                      .map((s:any) => s.id);
+                    setEditingTeacher({
+                      ...editingTeacher,
+                      subjectIds: [...(editingTeacher.subjectIds ?? []), ...remaining],
+                    });
+                  }}
+                  className="rounded-md bg-[#83c5be] px-3 py-1.5 text-sm text-slate-900 ring-1 ring-[#83c5be]/40"
+                >
+                  Add all →
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingTeacher({ ...editingTeacher, subjectIds: [] });
+                  }}
+                  className="rounded-md bg-[#e29578] px-3 py-1.5 text-sm text-white ring-1 ring-[#e29578]/20"
+                >
+                  ← Remove all
+                </button>
+              </div>
+            </div>
+
+            {/* Assigned */}
+            <div className="rounded-lg border border-gray-200">
+              <div className="px-3 py-2 text-sm font-medium text-gray-600">Assigned</div>
+              <div className="max-h-44 overflow-auto">
+                {subjects
+                  .filter((s:any) => (editingTeacher.subjectIds ?? []).includes(s.id))
+                  .map((s:any) => (
+                    <div key={s.id} className="flex items-center justify-between px-3 py-2">
+                      <span className="text-sm">{s.name}</span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditingTeacher({
+                            ...editingTeacher,
+                            subjectIds: (editingTeacher.subjectIds ?? []).filter((id:string) => id !== s.id),
+                          })
+                        }
+                        className="rounded-md px-2 py-1 text-xs text-rose-700 hover:bg-rose-50"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                {(editingTeacher.subjectIds ?? []).length === 0 && (
+                  <div className="px-3 py-2 text-sm text-gray-400">No subjects assigned</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center justify-end gap-3">
+          <button
+            type="button"
+            onClick={() => setShowEditModal(false)}
+            className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-gray-800 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#83c5be] focus:ring-offset-2"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={pendingCount > 0}
+            className="rounded-lg bg-[#006d77] px-4 py-2.5 font-medium text-white shadow-sm ring-1 ring-[#006d77]/20 transition hover:bg-[#006d77]/90 focus:outline-none focus:ring-2 focus:ring-[#006d77] focus:ring-offset-2 disabled:opacity-60"
+          >
+            {pendingCount > 0 ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+)}
+
 
         {/* Filter */}
         <div className="mx-auto max-w-5xl rounded-2xl bg-white p-6 shadow-lg ring-1 ring-gray-100">
