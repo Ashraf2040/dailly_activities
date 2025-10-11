@@ -1,0 +1,39 @@
+/* Scoped print helpers for the weekly planner */
+
+@media print {
+  /* Print root fits the page content box */
+  #weekly-plan-page {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-size: 11pt; /* optional slight downsize for fit */
+  }
+
+  /* Table must not overflow the content box */
+  #weekly-plan-page table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  /* Keep rows/cells together when possible */
+  table, thead, tbody, tr, th, td {
+    page-break-inside: avoid;
+  }
+
+  /* Tame large absolutely-positioned logos */
+  .print-header img {
+    max-width: 80px;
+    height: auto;
+  }
+
+  /* Remove outer padding on the print wrapper if any */
+  .print-area {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+}

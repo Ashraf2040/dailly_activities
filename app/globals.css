@@ -1,21 +1,5 @@
+/* global.css */
 @import "tailwindcss";
 
-@media print {
-  /* Hide everything by default */
-  body * {
-    visibility: hidden;
-  }
+/* Print sheet */
 
-  /* Show the print section and its children */
-  .print-section, .print-section * {
-    visibility: visible;
-  }
-
-  /* Position the print section at the top of the page */
-  .print-section {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-  }
-}

@@ -20,7 +20,8 @@
     "prisma": "^6.16.2",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "react-hot-toast": "^2.6.0"
+    "react-hot-toast": "^2.6.0",
+    "react-to-print": "^3.1.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
