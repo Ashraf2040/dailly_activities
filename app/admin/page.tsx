@@ -9,6 +9,8 @@ import toast from 'react-hot-toast';
 export default function AdminDashboard() {
   const { data: session, status } = useSession();
   const router = useRouter();
+// state
+const [lessonsLoading, setLessonsLoading] = useState(false);
 
   const [teachers, setTeachers] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
@@ -109,27 +111,24 @@ const [showEditModal, setShowEditModal] = useState(false); // modal toggle [web:
   }, [session, status, router]);
   console.log(assignedTeachersStatus)
 
-  const handleFilter = async () => {
-    if (!filter.classId || !filter.date) {
-      toast.error('Choose class and date first');
-      return;
-    }
-    try {
-      const data = await toast.promise(
-        track(fetchJson(`/api/lessons?classId=${filter.classId}&date=${filter.date}`)),
-        {
-          loading: 'Loading lessons…',
-          success: 'Lessons loaded',
-          error: (e) => `Failed to load lessons: ${String((e as any)?.message || e)}`,
-        }
-      );
-      setLessons(data);
-      setShowLessons(true);
-      setShowAssigned(false);
-    } catch {
-      // toast already shown
-    }
-  };
+ const handleFilter = async () => {
+  if (!filter.classId || !filter.date) {
+    toast.error('Choose class and date first');
+    return;
+  }
+  try {
+    setLessonsLoading(true);
+    const data = await fetch(`/api/lessons?classId=${filter.classId}&date=${filter.date}`).then(r => r.json());
+    setLessons(data ?? []);
+    setShowLessons(true);
+    setShowAssigned(false);
+  } catch (e) {
+    toast.error('Failed to load lessons');
+  } finally {
+    setLessonsLoading(false);
+  }
+};
+
 
   // compute assigned teachers + submitted flag + first submit time
   const handleShowAssignedTeachers = () => {
@@ -358,7 +357,24 @@ const handleUpdateTeacher = async (payload: {
     printWindow?.focus();
     printWindow?.print();
   };
-
+const toCsv = (rows: string[][]) => {
+  const esc = (v: string) => {
+    const s = String(v ?? '').replace(/"/g, '""');
+    return /[",\n]/.test(s) ? `"${s}"` : s;
+  };
+  return rows.map((r) => r.map(esc).join(',')).join('\n');
+};
+const downloadCsv = (filename: string, csv: string) => {
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};
   return (
     <div className="min-h-screen bg-gradient-to-br from-white via-[#f1fbf9] to-[#eaf7f5] p-6">
       {/* Top accent bar */}
@@ -381,6 +397,24 @@ const handleUpdateTeacher = async (payload: {
           >
             {showTeacherForm ? 'Hide Create Teacher' : 'Create Teacher'}
           </button>
+<button
+  type="button"
+  onClick={() => {
+    const header = ['Username', 'Name', 'Classes', 'Subjects'];
+    const rows = teachers.map((t: any) => [
+      t?.username ?? '',
+      t?.name ?? '',
+      (t?.classes ?? []).map((c: any) => c?.name ?? '').join(' | '),
+      (t?.subjects ?? []).map((s: any) => s?.name ?? '').join(' | '),
+    ]);
+    const csv = toCsv([header, ...rows]);
+    const date = new Date().toISOString().slice(0, 10);
+    downloadCsv(`teachers_${date}.csv`, csv);
+  }}
+  className="inline-flex items-center rounded-lg bg-[#e29578] px-4 py-2.5 text-white"
+>
+  Export Teacher CSV
+</button>
 
           <button
             onClick={() => setShowTeacherDetails(!showTeacherDetails)}
@@ -391,15 +425,15 @@ const handleUpdateTeacher = async (payload: {
           </button>
 <button
   onClick={() => router.push('/teacherData')}
-  className="inline-flex items-center justify-center rounded-lg bg-[#0ea5e9] px-4 py-2.5 text-white shadow-sm ring-1 ring-sky-200 transition hover:bg-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2"
+  className="inline-flex items-center justify-center rounded-lg bg-[#e29578] px-4 py-2.5 text-white shadow-sm ring-1 ring-sky-200 transition hover:bg-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2"
   disabled={pendingCount > 0}
   title="Export teacher details"
 >
-  Export Teacher Details
+  Teachers Cards
 </button>
           <button
             onClick={() => setShowClassForm(!showClassForm)}
-            className="inline-flex items-center justify-center rounded-lg border border-[#006d77]/30 bg-white px-4 py-2.5 text-[#006d77] shadow-sm transition hover:bg-[#006d77]/5 focus:outline-none focus:ring-2 focus:ring-[#006d77] focus:ring-offset-2"
+            className="inline-flex items-center justify-center rounded-lg border border-[#006d77]/30 bg-[#83c5be] px-4 py-2.5  text-white shadow-sm transition hover:bg-[#006d77]/5 focus:outline-none focus:ring-2 focus:ring-[#006d77] focus:ring-offset-2"
             disabled={pendingCount > 0}
           >
             {showClassForm ? 'Hide Create Class' : 'Create Class'}
@@ -407,7 +441,7 @@ const handleUpdateTeacher = async (payload: {
 
           <button
             onClick={() => setShowSubjectForm(!showSubjectForm)}
-            className="inline-flex items-center justify-center rounded-lg bg-[#e29578] px-4 py-2.5 text-white shadow-sm ring-1 ring-[#e29578]/20 transition hover:bg-[#e29578]/90 focus:outline-none focus:ring-2 focus:ring-[#e29578] focus:ring-offset-2"
+            className="inline-flex items-center justify-center rounded-lg bg-[#006d77] px-4 py-2.5 text-white shadow-sm ring-1 ring-[#e29578]/20 transition hover:bg-[#e29578]/90 focus:outline-none focus:ring-2 focus:ring-[#e29578] focus:ring-offset-2"
             disabled={pendingCount > 0}
           >
             {showSubjectForm ? 'Hide Create Subject' : 'Create Subject'}
@@ -945,57 +979,76 @@ const handleUpdateTeacher = async (payload: {
           </div>
 
           {/* Lessons table (toggle) */}
-          {showLessons && lessons.length > 0 && (
-            <div>
-              <div className="overflow-scroll rounded-xl ring-1 ring-gray-200 shadow-sm">
-                <table id="lessons-table" className="w-full table-auto text-sm">
-                  <thead className="bg-[#006d77] text-white">
-                    <tr>
-                      <th className="px-4 py-3 text-left font-semibold">Subject</th>
-                      <th className="px-4 py-3 text-left font-semibold">Unit</th>
-                      <th className="px-4 py-3 text-left font-semibold">Lesson</th>
-                      <th className="px-4 py-3 text-left font-semibold">Objective</th>
-                      <th className="px-4 py-3 text-left font-semibold">Pages</th>
-                      <th className="px-4 py-3 text-left font-semibold">Homework</th>
-                      <th className="px-4 py-3 text-left font-semibold">Comments</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {lessons.map((lesson: any, idx: number) => (
-                      <tr
-                        key={lesson.id}
-                        className={
-                          idx % 2 === 0
-                            ? 'bg-white hover:bg-[#83c5be]/10 transition-colors'
-                            : 'bg-gray-50 hover:bg-[#83c5be]/10 transition-colors'
-                        }
-                      >
-                        <td className="px-4 py-3">{lesson.subject.name}</td>
-                        <td className="px-4 py-3">{lesson.unit}</td>
-                        <td className="px-4 py-3">{lesson.lesson}</td>
-                        <td className="px-4 py-3">{lesson.objective}</td>
-                        <td className="px-4 py-3">{lesson.pages}</td>
-                        <td className="px-4 py-3">{lesson.homework || '-'}</td>
-                        <td
-                          className="px-4 py-3"
-                          dir={`${lesson.subject.name === 'Islamic' || lesson.subject.name === 'Arabic' ? 'rtl' : 'ltr'}`}
-                        >
-                          {lesson.comments || '-'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+          {/* Loading skeleton while fetching lessons */}
+{showLessons && lessonsLoading && (
+  <div className="mt-4 rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+    <div className="mb-3 h-6 w-40 animate-pulse rounded bg-gray-200" />
+    <div className="h-8 w-full animate-pulse rounded bg-gray-200" />
+    <div className="mt-2 h-8 w-full animate-pulse rounded bg-gray-200" />
+    <div className="mt-2 h-8 w-full animate-pulse rounded bg-gray-200" />
+  </div>
+)}
 
-              <button
-                onClick={handlePrint}
-                className="mt-4 inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2.5 font-medium text-gray-800 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#83c5be] focus:ring-offset-2"
+{/* Empty state when no lessons for the selected day */}
+{showLessons && !lessonsLoading && lessons.length === 0 && (
+  <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800">
+    No lessons submitted for today.
+  </div>
+)}
+
+{/* The original table rendered only when data exists and not loading */}
+{showLessons && !lessonsLoading && lessons.length > 0 && (
+  <div>
+    <div className="overflow-scroll rounded-xl ring-1 ring-gray-200 shadow-sm">
+      <table id="lessons-table" className="w-full table-auto text-sm">
+        <thead className="bg-[#006d77] text-white">
+          <tr>
+            <th className="px-4 py-3 text-left font-semibold">Subject</th>
+            <th className="px-4 py-3 text-left font-semibold">Unit</th>
+            <th className="px-4 py-3 text-left font-semibold">Lesson</th>
+            <th className="px-4 py-3 text-left font-semibold">Objective</th>
+            <th className="px-4 py-3 text-left font-semibold">Pages</th>
+            <th className="px-4 py-3 text-left font-semibold">Homework</th>
+            <th className="px-4 py-3 text-left font-semibold">Comments</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {lessons.map((lesson: any, idx: number) => (
+            <tr
+              key={lesson.id}
+              className={
+                idx % 2 === 0
+                  ? 'bg-white hover:bg-[#83c5be]/10 transition-colors'
+                  : 'bg-gray-50 hover:bg-[#83c5be]/10 transition-colors'
+              }
+            >
+              <td className="px-4 py-3">{lesson.subject.name}</td>
+              <td className="px-4 py-3">{lesson.unit}</td>
+              <td className="px-4 py-3">{lesson.lesson}</td>
+              <td className="px-4 py-3">{lesson.objective}</td>
+              <td className="px-4 py-3">{lesson.pages}</td>
+              <td className="px-4 py-3">{lesson.homework || '-'}</td>
+              <td
+                className="px-4 py-3"
+                dir={`${lesson.subject.name === 'Islamic' || lesson.subject.name === 'Arabic' ? 'rtl' : 'ltr'}`}
               >
-                Print Table
-              </button>
-            </div>
-          )}
+                {lesson.comments || '-'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    <button
+      onClick={handlePrint}
+      className="mt-4 inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2.5 font-medium text-gray-800 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#83c5be] focus:ring-offset-2"
+    >
+      Print Table
+    </button>
+  </div>
+)}
+
 
           {/* Assigned teachers table (toggle) */}
           {showAssigned && (
