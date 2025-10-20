@@ -46,27 +46,23 @@ export async function DELETE(
     await prisma.$disconnect();
   }
 }
-export async function PUT(
-  request: NextRequest,
-  ctx: { params: Promise<{ id: string }> }
-) {
-  const { id } = await ctx.params;
-  if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
-
+export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { gradeId, week, fromDate, toDate, items } = body;
+    const { id, ...u } = body;
 
-    const updated = await prisma.weeklyPlan.update({
+    const updatedPlan = await prisma.weeklyPlan.update({
       where: { id },
       data: {
-        gradeId,
-        week,
-        fromDate: new Date(fromDate),
-        toDate: new Date(toDate),
+        gradeId: u.gradeId,
+        week: u.week,
+        fromDate: new Date(u.fromDate),
+        toDate: new Date(u.toDate),
+        note: u.note ?? null,
+        dictation: u.dictation ?? null,
         items: {
           deleteMany: { weeklyPlanId: id },
-          create: (items || []).map((item: any) => ({
+          create: (u.items || []).map((item: any) => ({
             subjectId: item.subjectId,
             unit: item.unit ?? '',
             lessons: item.lessons ?? '',
@@ -76,12 +72,9 @@ export async function PUT(
       },
       include: { grade: true, items: { include: { subject: true } } },
     });
-
-    return NextResponse.json(updated, { status: 200 });
-  } catch (e) {
-    console.error(e);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json(updatedPlan, { status: 200 });
   } finally {
     await prisma.$disconnect();
   }
 }
+

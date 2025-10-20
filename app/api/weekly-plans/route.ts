@@ -21,7 +21,7 @@ export async function GET(_req: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { gradeId, week, fromDate, toDate, items } = body;
+    const { gradeId, week, fromDate, toDate, note, dictation, items } = body;
 
     const weeklyPlan = await prisma.weeklyPlan.create({
       data: {
@@ -29,27 +29,25 @@ export async function POST(request: NextRequest) {
         week,
         fromDate: new Date(fromDate),
         toDate: new Date(toDate),
+        note: note ?? null,
+        dictation: dictation ?? null,
         items: {
           create: (items || []).map((item: any) => ({
             subjectId: item.subjectId,
             unit: item.unit ?? '',
             lessons: item.lessons ?? '',
             pages: item.pages ?? '',
-            homework: undefined, // not in schema
-            classwork: undefined, // not in schema
           })),
         },
       },
       include: { grade: true, items: { include: { subject: true } } },
     });
     return NextResponse.json(weeklyPlan, { status: 201 });
-  } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   } finally {
     await prisma.$disconnect();
   }
 }
+
 
 export async function PUT(request: NextRequest) {
   try {

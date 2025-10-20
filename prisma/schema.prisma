@@ -77,7 +77,8 @@ model WeeklyPlan {
   toDate    DateTime
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
+  note       String?     // NEW
+  dictation  String?     // NEW
   grade     Grade?   @relation(fields: [gradeId], references: [id])
   items     WeeklyPlanItem[]
 }
@@ -89,9 +90,14 @@ model WeeklyPlanItem {
   unit          String
   lessons       String
   pages         String
-  weeklyPlan    WeeklyPlan @relation(fields: [weeklyPlanId], references: [id], onDelete: Cascade)
-  subject       Subject    @relation(fields: [subjectId], references: [id])
+  homework      String?    // if you want it persisted later
+  classwork     String?    // if you want it persisted later
+  dictation     String?    // NEW
+
+  weeklyPlan WeeklyPlan @relation(fields: [weeklyPlanId], references: [id], onDelete: Cascade)
+  subject    Subject    @relation(fields: [subjectId], references: [id])
 }
+
 
 enum Role {
   TEACHER

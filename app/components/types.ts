@@ -19,6 +19,8 @@ export interface WeeklyPlan {
   fromDate: string;
   toDate: string;
   grade: Grade;
+  note?: string | null;
+  dictation?: string | null;
   items: (WeeklyPlanItem & { subject: Subject })[];
 }
 
