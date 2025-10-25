@@ -321,7 +321,35 @@ const handleUpdateTeacher = async (payload: {
       // toast already shown
     }
   };
+const subjectOrder = [
+  'English',
+  'Math',
+  'Science',
+  'Social Studies',
+  'Life Skills',
+  "ICT",
+   'French',
+  'Computer',
+  'Arabic',
+  'S.S in Arabic',
+  'Islamic Studies',
+  
+ 
+  
+];
 
+// Helper to get the subject's order index (default to large number for unknown subjects)
+function subjectSortIndex(subjectName) {
+  const idx = subjectOrder.findIndex(
+    key => subjectName.trim().toLowerCase().startsWith(key.trim().toLowerCase())
+  );
+  return idx === -1 ? 999 : idx;
+}
+
+// Sort the lessons array
+const sortedLessons = [...lessons].sort((a, b) =>
+  subjectSortIndex(a.subject.name) - subjectSortIndex(b.subject.name)
+);
   const handlePrint = () => {
     const printWindow = window.open('', '_blank');
     const currentDate = new Date();
@@ -1019,7 +1047,7 @@ const downloadCsv = (filename: string, csv: string) => {
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
-          {lessons.map((lesson: any, idx: number) => (
+          {sortedLessons.map((lesson: any, idx: number) => (
             <tr
               key={lesson.id}
               className={
