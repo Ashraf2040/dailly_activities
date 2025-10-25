@@ -78,7 +78,7 @@ export default function TeacherDashboard() {
       await toast.promise(
         track(
           Promise.all([
-            fetchJson('/api/classes'),
+            fetchJson(`/api/users/${session.user.id}/classes`),
             fetchJson(`/api/users/${session.user.id}/subjects`),
             fetchJson(`/api/lessons?teacherId=${session.user.id}&date=${today}`),
           ]).then(([c, s, l]) => {
