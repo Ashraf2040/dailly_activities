@@ -153,11 +153,11 @@ model ScheduleItem {
   start       String
   end         String
   subjectId   String
-  teacherId   String
+  teacherId   String?
 
   schedule    Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
   subject     Subject  @relation(fields: [subjectId], references: [id])
-  teacher     User     @relation(fields: [teacherId], references: [id])
+  teacher     User?     @relation(fields: [teacherId], references: [id])
 
   @@index([scheduleId])
   @@index([teacherId])

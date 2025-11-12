@@ -80,3 +80,48 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const lessonId = params.id;
+    if (!lessonId) {
+      return NextResponse.json({ error: 'Missing lesson id' }, { status: 400 });
+    }
+
+    // Find lesson to check ownership and date
+    const existing = await prisma.lesson.findUnique({
+      where: { id: lessonId },
+      select: { id: true, teacherId: true, date: true },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Lesson not found' }, { status: 404 });
+    }
+
+    if (existing.teacherId !== session.user.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    // Only allow deleting today's lessons
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const existingDateStr =
+      typeof existing.date === 'string'
+        ? existing.date
+        : new Date(existing.date).toISOString().slice(0, 10);
+
+    if (existingDateStr !== todayStr) {
+      return NextResponse.json({ error: "Deleting allowed only for today's lessons" }, { status: 403 });
+    }
+
+    await prisma.lesson.delete({ where: { id: lessonId } });
+
+    return NextResponse.json({ ok: true }, { status: 200 });
+  } catch (err) {
+    console.error('DELETE /api/lessons/[id] failed:', err);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}

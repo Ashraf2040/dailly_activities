@@ -541,3 +541,68 @@ export default function TeacherDashboard() {
     </div>
   );
 }
+
+
+
+
+
+//"use client";
+
+// import { useTeacherDashboardData } from '../hooks/useTeacherDashboardData';
+// import LessonForm from '../components/LessonForm';
+// import LessonsTable from '../components/LessonsTable';
+// import LoadingOverlay from '../components/LoadingOverlay';
+
+// export default function TeacherDashboard({ session, status, router }) {
+//   const {
+//     classes, subjects, todayLessons, pendingCount,
+//     formData, setFormData, handleSubmit,
+//     editingId, editData, startEdit, cancelEdit, saveEdit, deleteLesson,
+//     refreshTodayLessons,
+//     teacherId
+//   } = useTeacherDashboardData(session, status, router);
+
+//   const todaysTeacherLessons = todayLessons.filter((l) => l.teacherId === teacherId);
+
+//   // Only show loading while dashboard is initializing
+//   if (status === 'loading' || (pendingCount > 0 && todayLessons.length === 0)) {
+//     return <LoadingOverlay />;
+//   }
+
+//   return (
+//     <div className="min-h-screen bg-gradient-to-br from-white via-[#f1fbf9] to-[#eaf7f5] p-6">
+//       <div className="mx-auto mb-6 h-1 w-full max-w-5xl rounded-full bg-[#006d77]" />
+//       <div className="mx-auto max-w-5xl">
+//         <div className="mb-6">
+//           <h1 className="text-3xl font-bold tracking-tight text-[#064e4f]">Teacher Dashboard</h1>
+//           {session?.user && (
+//             <p className="mt-1 text-sm text-gray-600">
+//               Welcome, {session.user.name} ({session.user.role})
+//             </p>
+//           )}
+//         </div>
+
+//         <LessonForm
+//           classes={classes}
+//           subjects={subjects}
+//           formData={formData}
+//           setFormData={setFormData}
+//           handleSubmit={handleSubmit}
+//           pendingCount={pendingCount}
+//         />
+
+//         <LessonsTable
+//           lessons={todaysTeacherLessons}
+//           editingId={editingId}
+//           editData={editData}
+//           startEdit={startEdit}
+//           cancelEdit={cancelEdit}
+//           saveEdit={saveEdit}
+//           deleteLesson={deleteLesson}
+//           pendingCount={pendingCount}
+//           refreshTodayLessons={refreshTodayLessons}
+//         />
+//       </div>
+//     </div>
+//   );
+// }
