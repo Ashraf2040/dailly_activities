@@ -135,7 +135,7 @@ export default function TeacherDashboard() {
   const [isInitialLoad, setIsInitialLoad] = useState(() => _cache === null);
 
   const [formData, setFormData] = useState({
-    classId: '',
+    classIds: [] as string[],
     subjectId: '',
     date: getTodayStr(),
     unit: '',
@@ -241,31 +241,37 @@ export default function TeacherDashboard() {
       toast.error('You are not authenticated');
       return;
     }
+    if (formData.classIds.length === 0) {
+      toast.error('Select at least one class');
+      return;
+    }
 
-    const payload = { ...formData, teacherId };
     try {
       await toast.promise(
         track(
           (async () => {
-            await fetchJson('/api/lessons', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload),
-            });
+            await Promise.all(
+              formData.classIds.map((classId) =>
+                fetchJson('/api/lessons', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ ...formData, classId, teacherId }),
+                })
+              )
+            );
             await refreshTodayLessons();
           })()
         ),
         {
-          loading: 'Submitting lesson...',
+          loading: `Submitting lesson to ${formData.classIds.length} class(es)...`,
           success: 'Lesson submitted successfully',
           error: (e) =>
             `Failed to submit lesson: ${String((e as any)?.message || e)}`,
         }
       );
-      // Reset form fields (keep date)
       setFormData((prev) => ({
         ...prev,
-        classId: '',
+        classIds: [],
         subjectId: '',
         unit: '',
         lesson: '',
@@ -450,27 +456,36 @@ export default function TeacherDashboard() {
 
           <form onSubmit={handleSubmit} className="p-6">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {/* Class */}
-              <div>
+              {/* Class — multi-select */}
+              <div className="sm:col-span-2">
                 <label className={labelCls}>
-                  Class <span className="text-red-500">*</span>
+                  Classes <span className="text-red-500">*</span>
                 </label>
-                <select
-                  value={formData.classId}
-                  onChange={(e) =>
-                    setFormData({ ...formData, classId: e.target.value })
-                  }
-                  className={inputCls}
-                  required
-                  disabled={pendingCount > 0}
-                >
-                  <option value="">Select class</option>
+                <div className="flex flex-wrap gap-2">
                   {classes.map((cls) => (
-                    <option key={cls.id} value={cls.id}>
-                      {cls.name}
-                    </option>
+                    <label key={cls.id} className="cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.classIds.includes(cls.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setFormData({ ...formData, classIds: [...formData.classIds, cls.id] });
+                          } else {
+                            setFormData({ ...formData, classIds: formData.classIds.filter((id) => id !== cls.id) });
+                          }
+                        }}
+                        className="hidden peer"
+                        disabled={pendingCount > 0}
+                      />
+                      <span className="inline-flex items-center gap-1.5 rounded-full border-2 border-[#006d77] px-4 py-2 text-sm font-medium transition-all peer-checked:bg-[#006d77] peer-checked:text-white peer-checked:border-[#006d77] text-[#006d77] hover:bg-[#006d77]/10">
+                        {cls.name}
+                      </span>
+                    </label>
                   ))}
-                </select>
+                </div>
+                {formData.classIds.length > 0 && (
+                  <p className="mt-1.5 text-xs text-[#006d77] font-medium">{formData.classIds.length} class(es) selected</p>
+                )}
               </div>
 
               {/* Subject */}
@@ -622,7 +637,7 @@ export default function TeacherDashboard() {
                 onClick={() =>
                   setFormData((prev) => ({
                     ...prev,
-                    classId: '',
+                    classIds: [],
                     subjectId: '',
                     unit: '',
                     lesson: '',

@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import Papa from 'papaparse';
+import EditSchedule from '../components/EditSchedule';
 
 // ─── Types ──────────────────────────────────────────────────────
 type TeacherClass = { id: string; name: string };
@@ -44,6 +44,14 @@ type AssignedTeacherStatus = {
   name: string;
   submitted: boolean;
   submittedAt?: string | null;
+};
+
+type AllTeacherRow = {
+  id: string;
+  username: string;
+  name: string;
+  classes: { name: string; subjects: string[]; submitted: boolean }[];
+  allSubmitted: boolean;
 };
 
 // ─── Module-level cache ─────────────────────────────────────────
@@ -176,12 +184,6 @@ function subjectSortIndex(subjectName: string) {
   return idx === -1 ? 999 : idx;
 }
 
-const normalizeSubj = (s?: string) =>
-  (s ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
-
-const weekdayNameFromDate = (dateStr: string) =>
-  new Date(dateStr).toLocaleDateString('en-US', { weekday: 'long' });
-
 const formatTime = (ts?: string | Date | null) => {
   if (!ts) return '—';
   const d = new Date(ts);
@@ -208,21 +210,6 @@ const downloadCsv = (filename: string, csv: string) => {
   URL.revokeObjectURL(url);
 };
 
-const parseFixedScheduleCsv = (csvText: string) => {
-  const result = Papa.parse(csvText, { header: true, skipEmptyLines: true });
-  const map: Record<string, Record<string, string[]>> = {};
-  for (const row of result.data as any[]) {
-    const className = (row.class ?? row.Class ?? '').toString().trim();
-    const weekday = (row.weekday ?? row.Weekday ?? '').toString().trim();
-    const subjectsRaw = row.subjects ?? row.Subjects ?? '';
-    const subjects = subjectsRaw.toString().split(',').map((s: string) => s.trim()).filter(Boolean);
-    if (!className || !weekday) continue;
-    if (!map[className]) map[className] = {};
-    map[className][weekday] = subjects;
-  }
-  return map;
-};
-
 // ─── Component ──────────────────────────────────────────────────
 export default function AdminDashboard() {
   const { data: session, status } = useSession();
@@ -235,7 +222,6 @@ export default function AdminDashboard() {
 
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [lessonsLoading, setLessonsLoading] = useState(false);
-  const [fixedScheduleMap, setFixedScheduleMap] = useState<Record<string, Record<string, string[]>> | null>(null);
   const [filter, setFilter] = useState({ classId: '', date: '' });
 
   const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null);
@@ -254,6 +240,10 @@ export default function AdminDashboard() {
   const [showSubjectForm, setShowSubjectForm] = useState(false);
   const [showLessons, setShowLessons] = useState(false);
   const [showAssigned, setShowAssigned] = useState(false);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+
+  const [showAllTeachers, setShowAllTeachers] = useState(false);
+  const [allTeachersData, setAllTeachersData] = useState<AllTeacherRow[]>([]);
 
   const [assignedTeachersStatus, setAssignedTeachersStatus] = useState<AssignedTeacherStatus[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
@@ -307,19 +297,6 @@ export default function AdminDashboard() {
     load();
   }, [session, status, router]);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch('/fixed-schedule.csv');
-        if (!res.ok) return;
-        const text = await res.text();
-        setFixedScheduleMap(parseFixedScheduleCsv(text));
-      } catch (err) {
-        console.warn('Failed to load fixed schedule CSV', err);
-      }
-    })();
-  }, []);
-
   const sortedLessons = useMemo(
     () => [...lessons].sort((a, b) =>
       subjectSortIndex(a.subject?.name ?? a.subjectName ?? '') -
@@ -347,11 +324,36 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleShowAssignedTeachers = () => {
+  const handleShowAssignedTeachers = async () => {
     if (!filter.classId || !filter.date) {
       toast.error('Choose class and date first');
       return;
     }
+
+    let dbSchedule: { [dayIndex: number]: string[] } = {};
+    try {
+      const data = await fetchJson(`/api/schedule?classId=${filter.classId}`);
+      dbSchedule = data.schedule ?? {};
+    } catch {
+      toast.error('Failed to load schedule from database');
+      return;
+    }
+
+    const dayIndex = new Date(filter.date).getDay();
+    const scheduledSubjectIds = dbSchedule[dayIndex] ?? [];
+
+    if (scheduledSubjectIds.length === 0) {
+      toast.error('No schedule found for this class on this day');
+      return;
+    }
+
+    const scheduledSet = new Set(scheduledSubjectIds);
+
+    const assigned = teachers.filter((t) => {
+      if (!(t.classes ?? []).some((c) => c.id === filter.classId)) return false;
+      const teacherSubjectIds = (t.subjects ?? []).map((s) => s.id);
+      return teacherSubjectIds.some((id) => scheduledSet.has(id));
+    });
 
     const firstSubmitByTeacher = new Map<string, string | null>();
     const sorted = [...(lessons ?? [])].sort((a, b) => {
@@ -365,61 +367,220 @@ export default function AdminDashboard() {
       }
     }
 
-    const assigned = teachers.filter((t) =>
-      (t.classes ?? []).some((c) => c.id === filter.classId)
-    );
-
-    const submittedSubjectsSet = new Set(
-      (lessons ?? []).map((l) => normalizeSubj(l.subject?.name ?? l.subjectName ?? ''))
-    );
-
-    const selectedClass = classes.find((cls) => cls.id === filter.classId);
-    const className = selectedClass?.name ?? '';
-    const weekdayName = weekdayNameFromDate(filter.date);
-
-    const requiredSubjects: string[] =
-      (fixedScheduleMap?.[className]?.[weekdayName] ?? [])
-        .map((s) => s.trim())
-        .filter(Boolean) ?? [];
-
-    const fallbackMode = requiredSubjects.length === 0;
-
-    const missingSubjects = requiredSubjects
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .map(normalizeSubj)
-      .filter((s) => !submittedSubjectsSet.has(s));
-
-    const missingSubjectToTeacherIds = new Map<string, string[]>();
-    for (const ms of missingSubjects) {
-      const responsible = teachers
-        .filter((t) => {
-          const teachesSubject = (t.subjects ?? []).some((sub) => normalizeSubj(sub.name) === ms);
-          const teachesClass = (t.classes ?? []).some((c) => c.id === filter.classId);
-          return teachesSubject && teachesClass;
-        })
-        .map((t) => t.id);
-      missingSubjectToTeacherIds.set(ms, responsible);
-    }
-
     const rows: AssignedTeacherStatus[] = assigned.map((t) => {
-      if (fallbackMode) {
-        const submitted = (lessons ?? []).some((l) => l.teacherId === t.id);
-        return { id: t.id, username: t.username, name: t.name, submitted, submittedAt: firstSubmitByTeacher.get(t.id) ?? null };
-      }
-      const teacherSubmitted = (lessons ?? []).some((l) => l.teacherId === t.id);
-      if (teacherSubmitted) {
-        return { id: t.id, username: t.username, name: t.name, submitted: true, submittedAt: firstSubmitByTeacher.get(t.id) ?? null };
-      }
-      let responsibleForMissing = false;
-      for (const [, teacherIds] of missingSubjectToTeacherIds.entries()) {
-        if (teacherIds.includes(t.id)) { responsibleForMissing = true; break; }
-      }
-      return { id: t.id, username: t.username, name: t.name, submitted: !responsibleForMissing, submittedAt: firstSubmitByTeacher.get(t.id) ?? null };
+      const teacherSubjectIds = (t.subjects ?? []).map((s) => s.id);
+      const relevantSubjectIds = teacherSubjectIds.filter((id) => scheduledSet.has(id));
+
+      const teacherLessons = (lessons ?? []).filter(
+        (l) => l.teacherId === t.id && relevantSubjectIds.includes(l.subjectId)
+      );
+
+      const missingSubjectIds = relevantSubjectIds.filter(
+        (id) => !teacherLessons.some((l) => l.subjectId === id)
+      );
+
+      return {
+        id: t.id,
+        username: t.username,
+        name: t.name,
+        submitted: missingSubjectIds.length === 0,
+        submittedAt: firstSubmitByTeacher.get(t.id) ?? null,
+      };
     });
 
     setAssignedTeachersStatus(rows);
     setShowAssigned(true);
+  };
+
+  const handleShowAllTeachers = async () => {
+    if (!filter.date) {
+      toast.error('Choose a date first');
+      return;
+    }
+
+    let schedules: any[] = [];
+    try {
+      const data = await fetchJson('/api/schedules');
+      schedules = data.schedules ?? [];
+    } catch {
+      toast.error('Failed to load schedules');
+      return;
+    }
+
+    const dayIndex = new Date(filter.date).getDay();
+    const subjectMap = new Map(subjects.map((s) => [s.id, s.name]));
+    const classMap = new Map(classes.map((c) => [c.id, c.name]));
+
+    // teacherId → { info, className → { classId, subjects, subjectIds } }
+    const teacherMap = new Map<string, {
+      id: string; username: string; name: string;
+      classEntries: Map<string, { classId: string; subjects: Set<string>; subjectIds: Set<string> }>;
+    }>();
+
+    for (const sch of schedules) {
+      if (!sch.isActive) continue;
+      const daySubjects = (sch.items ?? [])
+        .filter((item: any) => item.dayIndex === dayIndex)
+        .map((item: any) => item.subjectId);
+      if (daySubjects.length === 0) continue;
+
+      const className = classMap.get(sch.classId) ?? sch.className;
+
+      for (const t of teachers) {
+        const teachesClass = (t.classes ?? []).some((c) => c.id === sch.classId);
+        if (!teachesClass) continue;
+
+        const teacherSubjectsInDay = daySubjects.filter((subId: string) =>
+          (t.subjects ?? []).some((s) => s.id === subId)
+        );
+        if (teacherSubjectsInDay.length === 0) continue;
+
+        if (!teacherMap.has(t.id)) {
+          teacherMap.set(t.id, {
+            id: t.id, username: t.username, name: t.name,
+            classEntries: new Map(),
+          });
+        }
+        const entry = teacherMap.get(t.id)!;
+        if (!entry.classEntries.has(className)) {
+          entry.classEntries.set(className, { classId: sch.classId, subjects: new Set(), subjectIds: new Set() });
+        }
+        const classEntry = entry.classEntries.get(className)!;
+        for (const subId of teacherSubjectsInDay) {
+          classEntry.subjects.add(subjectMap.get(subId) ?? subId);
+          classEntry.subjectIds.add(subId);
+        }
+      }
+    }
+
+    const rows: AllTeacherRow[] = Array.from(teacherMap.values()).map((t) => {
+      const classDetails = Array.from(t.classEntries.entries()).map(([className, ce]) => {
+        const submitted = (lessons ?? []).some(
+          (l) => l.teacherId === t.id && l.classId === ce.classId && ce.subjectIds.has(l.subjectId)
+        );
+        return {
+          name: className,
+          subjects: Array.from(ce.subjects),
+          submitted,
+        };
+      });
+      return {
+        id: t.id,
+        username: t.username,
+        name: t.name,
+        classes: classDetails,
+        allSubmitted: classDetails.every((c) => c.submitted),
+      };
+    }).sort((a, b) => a.name.localeCompare(b.name));
+
+    if (rows.length === 0) {
+      toast.error('No teachers found with subjects scheduled for this day');
+      return;
+    }
+
+    setAllTeachersData(rows);
+    setShowAllTeachers(true);
+  };
+
+  const handlePrintAllTeachers = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast.error('Please allow pop-ups to print.');
+      return;
+    }
+
+    const dateStr = new Date(filter.date).toLocaleDateString('en-US', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    });
+
+    const missingCount = allTeachersData.filter((t) => !t.allSubmitted).length;
+    const submittedCount = allTeachersData.length - missingCount;
+
+    const tableRows = allTeachersData.map((t, idx) => {
+      const submittedClasses = t.classes.filter((c) => c.submitted);
+      const missingClasses = t.classes.filter((c) => !c.submitted);
+      return `
+      <tr class="${!t.allSubmitted ? 'row-missing' : 'row-submitted'}">
+        <td class="number-cell">${idx + 1}</td>
+        <td><strong>${escapeHtml(t.name)}</strong></td>
+        <td>${escapeHtml(t.username)}</td>
+        <td>${submittedClasses.map((c) => `<span class="pill pill-green">${escapeHtml(c.name)}</span> <span class="sub-text">${escapeHtml(c.subjects.join(', '))}</span>`).join('<br>') || '<span class="no-data">—</span>'}</td>
+        <td>${missingClasses.map((c) => `<span class="pill pill-red">${escapeHtml(c.name)}</span> <span class="sub-text">${escapeHtml(c.subjects.join(', '))}</span>`).join('<br>') || '<span class="no-data">—</span>'}</td>
+      </tr>`;
+    }).join('');
+
+    printWindow.document.write(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Teacher Submission Report — ${dateStr}</title>
+<style>
+  @page { margin: 1.2cm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: Arial, sans-serif;
+    color: #1e293b;
+    padding: 30px 40px;
+    border: 2px solid #006d77;
+    border-radius: 8px;
+  }
+  .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #006d77; padding-bottom: 16px; margin-bottom: 24px; }
+  .school-name { font-size: 22px; font-weight: bold; color: #006d77; }
+  .school-sub { font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 1.5px; margin-top: 4px; }
+  .title { text-align: center; margin-bottom: 20px; }
+  .title h1 { font-size: 20px; font-weight: bold; color: #064e4f; text-transform: uppercase; letter-spacing: 2px; }
+  .info-bar { display: flex; justify-content: space-around; background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 8px; padding: 12px; margin-bottom: 20px; }
+  .info-item { text-align: center; flex: 1; }
+  .info-item + .info-item { border-left: 1px solid #ccfbf1; }
+  .info-label { display: block; font-size: 9px; text-transform: uppercase; letter-spacing: 1.2px; color: #64748b; margin-bottom: 3px; }
+  .info-value { font-size: 13px; font-weight: 600; color: #006d77; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 20px; }
+  thead th { background: #006d77; color: #fff; padding: 10px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+  tbody td { border: 1px solid #e2e8f0; padding: 8px 10px; vertical-align: top; }
+  .number-cell { text-align: center; color: #94a3b8; font-weight: 600; }
+  .row-missing { border-left: 4px solid #f87171; background: #fef2f2; }
+  .row-submitted { border-left: 4px solid #34d399; background: #f0fdf4; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; }
+  .pill-green { background: #d1fae5; color: #065f46; }
+  .pill-red { background: #fee2e2; color: #991b1b; }
+  .sub-text { font-size: 10px; color: #64748b; }
+  .no-data { color: #cbd5e1; font-size: 10px; }
+  .footer { margin-top: 30px; padding-top: 16px; border-top: 1.5px solid #e2e8f0; text-align: center; font-size: 11px; color: #64748b; font-style: italic; }
+  @media print { body { border: none; padding: 20px 30px; } }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div><p class="school-name">Alforqan Private School</p><p class="school-sub">American Division</p></div>
+    <img src="/logo.svg" alt="Logo" style="height:70px" />
+  </div>
+  <div class="title"><h1>Teacher Submission Report</h1></div>
+  <div class="info-bar">
+    <div class="info-item"><span class="info-label">Date</span><span class="info-value">${dateStr}</span></div>
+    <div class="info-item"><span class="info-label">Total Teachers</span><span class="info-value">${allTeachersData.length}</span></div>
+    <div class="info-item"><span class="info-label">Submitted</span><span class="info-value">${submittedCount}</span></div>
+    <div class="info-item"><span class="info-label">Missing</span><span class="info-value">${missingCount}</span></div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:30px">#</th>
+        <th>Name</th>
+        <th>Username</th>
+        <th style="color:#bbf7d0">Submitted</th>
+        <th style="color:#fecaca">Unsubmitted</th>
+      </tr>
+    </thead>
+    <tbody>${tableRows}</tbody>
+  </table>
+  <div class="footer">
+    <p>Please submit your lesson plan before the end of the school day.</p>
+  </div>
+</body>
+</html>`);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => printWindow.print(), 250);
   };
 
   const handleCreateTeacher = async (e: React.FormEvent) => {
@@ -981,7 +1142,7 @@ export default function AdminDashboard() {
           <button onClick={() => router.push('/teacherData')} className={btnAccent} disabled={pendingCount > 0}>
             <Icon.Card className="h-4 w-4" /> Teachers Cards
           </button>
-          <button onClick={() => router.push('/schedule')} className={btnPrimary} disabled={pendingCount > 0}>
+          <button onClick={() => setShowScheduleModal(true)} className={btnPrimary} disabled={pendingCount > 0}>
             <Icon.Card className="h-4 w-4" /> Schedules Hub
           </button>
           <button onClick={() => setShowClassForm(!showClassForm)} className={btnSecondary} disabled={pendingCount > 0}>
@@ -1297,9 +1458,18 @@ export default function AdminDashboard() {
 
         {/* ─── View Lessons (Filter + Table) ──────────────────── */}
         <section className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-          <div className="border-b border-slate-200 px-6 py-4">
-            <h2 className="text-base font-semibold text-slate-900">View Lessons</h2>
-            <p className="mt-0.5 text-sm text-slate-500">Filter by class and date to view submitted lessons.</p>
+          <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">View Lessons</h2>
+              <p className="mt-0.5 text-sm text-slate-500">Filter by class and date to view submitted lessons.</p>
+            </div>
+            <button
+              onClick={() => (showAllTeachers ? setShowAllTeachers(false) : handleShowAllTeachers())}
+              disabled={!filter.date || pendingCount > 0}
+              className="inline-flex items-center gap-2 rounded-lg bg-[#83c5be] px-4 py-2.5 text-sm font-medium text-slate-900 shadow-sm transition hover:bg-[#72b5ae] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Icon.Users className="h-4 w-4" /> {showAllTeachers ? 'Hide' : 'All Teachers'}
+            </button>
           </div>
           <div className="p-6">
             <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -1426,9 +1596,96 @@ export default function AdminDashboard() {
                 </div>
               </div>
             )}
+
+            {/* ─── All Teachers Table ──────────────────────────── */}
+            {showAllTeachers && allTeachersData.length > 0 && (() => {
+              const missingTeachers = allTeachersData.filter((t) => !t.allSubmitted);
+              const submittedTeachers = allTeachersData.filter((t) => t.allSubmitted);
+
+              const renderClassPills = (classes: AllTeacherRow['classes'], submitted: boolean) => {
+                const filtered = classes.filter((c) => c.submitted === submitted);
+                if (filtered.length === 0) return <span className="text-slate-300 text-xs">—</span>;
+                return (
+                  <div className="flex flex-col gap-1.5">
+                    {filtered.map((c) => (
+                      <div key={c.name} className="flex items-center gap-1.5">
+                        <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-bold ${submitted ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>{c.name}</span>
+                        <span className="text-xs text-slate-500">{c.subjects.join(', ')}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              };
+
+              const renderRow = (t: AllTeacherRow, isMissing: boolean) => (
+                <tr className={`transition-colors border-l-4 ${isMissing ? 'border-l-red-400 bg-red-50/30 hover:bg-red-50/60' : 'border-l-emerald-400 bg-emerald-50/20 hover:bg-emerald-50/50'}`}>
+                  <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">{t.name}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-slate-500 text-xs">{t.username}</td>
+                  <td className="px-4 py-3">{renderClassPills(t.classes, true)}</td>
+                  <td className="px-4 py-3">{renderClassPills(t.classes, false)}</td>
+                </tr>
+              );
+
+              return (
+                <div className="mt-6">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-slate-700">
+                      All Teachers — {new Date(filter.date).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+                    </h3>
+                    <button onClick={handlePrintAllTeachers} className={btnSecondary}>
+                      <Icon.Print className="h-4 w-4" /> Print Report
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-xl ring-1 ring-slate-200">
+                    <table className="w-full min-w-[750px] text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Name</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Username</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-emerald-600">Submitted</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-red-600">Unsubmitted</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {missingTeachers.length > 0 && (
+                          <>
+                            <tr>
+                              <td colSpan={4} className="bg-red-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-red-600 border-l-4 border-l-red-400">
+                                Missing ({missingTeachers.length})
+                              </td>
+                            </tr>
+                            {missingTeachers.map((t) => renderRow(t, true))}
+                          </>
+                        )}
+                        {submittedTeachers.length > 0 && (
+                          <>
+                            <tr>
+                              <td colSpan={4} className="bg-emerald-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-emerald-600 border-l-4 border-l-emerald-400">
+                                All Submitted ({submittedTeachers.length})
+                              </td>
+                            </tr>
+                            {submittedTeachers.map((t) => renderRow(t, false))}
+                          </>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </section>
       </main>
+
+      {/* ─── Schedule Manager Modal ─────────────────────────── */}
+      <EditSchedule
+        show={showScheduleModal}
+        onClose={() => setShowScheduleModal(false)}
+        classes={classes}
+        subjects={subjects}
+        user={{ id: session?.user?.id ?? '' }}
+      />
 
       {/* ─── Global loading overlay ────────────────────────── */}
       {pendingCount > 0 && (
