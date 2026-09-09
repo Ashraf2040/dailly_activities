@@ -269,17 +269,8 @@ export default function TeacherDashboard() {
             `Failed to submit lesson: ${String((e as any)?.message || e)}`,
         }
       );
-      setFormData((prev) => ({
-        ...prev,
-        classIds: [],
-        subjectId: '',
-        unit: '',
-        lesson: '',
-        objective: '',
-        homework: '',
-        pages: '',
-        comments: '',
-      }));
+      // Keep the submitted values so another day's lesson can be added quickly.
+      // The Reset button remains available when a blank form is needed.
     } catch {}
   };
 

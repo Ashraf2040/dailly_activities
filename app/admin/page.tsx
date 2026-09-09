@@ -877,6 +877,7 @@ export default function AdminDashboard() {
     border-collapse: collapse;
     margin-bottom: 0;
     font-size: 11px;
+    font-weight: 700;
   }
   thead th {
     background: linear-gradient(135deg, #006d77, #005a63);
@@ -885,7 +886,7 @@ export default function AdminDashboard() {
     text-align: left;
     font-family: Arial, sans-serif;
     font-size: 10px;
-    font-weight: 600;
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     border: 1px solid #005a63;
@@ -897,17 +898,18 @@ export default function AdminDashboard() {
     padding: 9px 12px;
     vertical-align: top;
     font-family: Arial, sans-serif;
+    font-weight: 700;
   }
   tbody tr:nth-child(even) { background: #f8fafc; }
   .subject-cell {
-    font-weight: 600;
+    font-weight: 700;
     color: #064e4f;
     white-space: nowrap;
   }
   .number-cell {
     text-align: center;
     color: #94a3b8;
-    font-weight: 600;
+    font-weight: 700;
   }
   .center-cell { text-align: center; white-space: nowrap; }
 
@@ -1531,26 +1533,26 @@ export default function AdminDashboard() {
                   </button>
                 </div>
                 <div className="overflow-x-auto rounded-xl ring-1 ring-slate-200">
-                  <table id="lessons-table" className="w-full min-w-[900px] text-sm">
+                  <table id="lessons-table" className="w-full min-w-[900px] text-sm font-bold">
                     <thead className="border-b border-slate-200 bg-slate-50">
                       <tr>
                         {['Subject', 'Teacher', 'Unit', 'Lesson', 'Objective', 'Pages', 'Homework', 'Comments', 'Submitted'].map((h) => (
-                          <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">{h}</th>
+                          <th key={h} className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-slate-500">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {sortedLessons.map((lesson, idx) => (
                         <tr key={lesson.id} className={`transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-teal-50/40`}>
-                          <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">{lesson.subject?.name ?? lesson.subjectName ?? '—'}</td>
-                          <td className="whitespace-nowrap px-4 py-3 text-slate-600">{lesson.teacher?.name ?? '—'}</td>
-                          <td className="px-4 py-3 text-slate-600">{lesson.unit}</td>
-                          <td className="max-w-[180px] truncate px-4 py-3 text-slate-600" title={lesson.lesson}>{lesson.lesson}</td>
-                          <td className="max-w-[180px] truncate px-4 py-3 text-slate-600" title={lesson.objective}>{lesson.objective}</td>
-                          <td className="whitespace-nowrap px-4 py-3 text-slate-600">{lesson.pages}</td>
-                          <td className="max-w-[120px] truncate px-4 py-3 text-slate-600" title={lesson.homework ?? ''}>{lesson.homework || <span className="text-slate-300">—</span>}</td>
-                          <td className="max-w-[120px] truncate px-4 py-3 text-slate-600" title={lesson.comments ?? ''}>{lesson.comments || <span className="text-slate-300">—</span>}</td>
-                          <td className="whitespace-nowrap px-4 py-3 text-slate-500">{lesson.createdAt ? formatTime(lesson.createdAt) : '—'}</td>
+                          <td className="whitespace-nowrap px-4 py-3 font-bold text-slate-900">{lesson.subject?.name ?? lesson.subjectName ?? '—'}</td>
+                          <td className="whitespace-nowrap px-4 py-3 font-bold text-slate-600">{lesson.teacher?.name ?? '—'}</td>
+                          <td className="px-4 py-3 font-bold text-slate-600">{lesson.unit}</td>
+                          <td className="max-w-[180px] truncate px-4 py-3 font-bold text-slate-600" title={lesson.lesson}>{lesson.lesson}</td>
+                          <td className="max-w-[180px] truncate px-4 py-3 font-bold text-slate-600" title={lesson.objective}>{lesson.objective}</td>
+                          <td className="whitespace-nowrap px-4 py-3 font-bold text-slate-600">{lesson.pages}</td>
+                          <td className="max-w-[120px] truncate px-4 py-3 font-bold text-slate-600" title={lesson.homework ?? ''}>{lesson.homework || <span className="text-slate-300">—</span>}</td>
+                          <td className="max-w-[120px] truncate px-4 py-3 font-bold text-slate-600" title={lesson.comments ?? ''}>{lesson.comments || <span className="text-slate-300">—</span>}</td>
+                          <td className="whitespace-nowrap px-4 py-3 font-bold text-slate-500">{lesson.createdAt ? formatTime(lesson.createdAt) : '—'}</td>
                         </tr>
                       ))}
                     </tbody>
