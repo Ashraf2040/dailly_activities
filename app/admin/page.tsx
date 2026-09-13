@@ -866,7 +866,7 @@ export default function AdminDashboard() {
     margin-bottom: 4px;
   }
   .info-value {
-    font-size: 13px;
+    font-size: 28px;
     font-weight: 600;
     color: #006d77;
   }
@@ -876,7 +876,7 @@ export default function AdminDashboard() {
     width: 100%;
     border-collapse: collapse;
     margin-bottom: 0;
-    font-size: 11px;
+    font-size: 16px;
     font-weight: 700;
   }
   thead th {
@@ -910,6 +910,7 @@ export default function AdminDashboard() {
     text-align: center;
     color: #94a3b8;
     font-weight: 700;
+   
   }
   .center-cell { text-align: center; white-space: nowrap; }
 
