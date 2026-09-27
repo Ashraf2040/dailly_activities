@@ -876,8 +876,8 @@ export default function AdminDashboard() {
     width: 100%;
     border-collapse: collapse;
     margin-bottom: 0;
-    font-size: 16px;
-    font-weight: 700;
+    font-size: 18px;
+    font-weight: 500;
   }
   thead th {
     background: linear-gradient(135deg, #006d77, #005a63);
