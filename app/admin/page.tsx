@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
@@ -210,6 +210,32 @@ const downloadCsv = (filename: string, csv: string) => {
   URL.revokeObjectURL(url);
 };
 
+const parseCsv = (text: string) => {
+  const rows: string[][] = [];
+  let row: string[] = [], cell = '', quoted = false;
+  const input = text.replace(/^\uFEFF/, '');
+  for (let i = 0; i < input.length; i++) {
+    const char = input[i];
+    if (quoted) {
+      if (char === '"' && input[i + 1] === '"') { cell += '"'; i++; }
+      else if (char === '"') quoted = false;
+      else cell += char;
+    } else if (char === '"' && cell.length === 0) quoted = true;
+    else if (char === ',') { row.push(cell.trim()); cell = ''; }
+    else if (char === '\n' || char === '\r') {
+      if (char === '\r' && input[i + 1] === '\n') i++;
+      row.push(cell.trim());
+      if (row.some((value) => value !== '')) rows.push(row);
+      row = []; cell = '';
+    } else cell += char;
+  }
+  row.push(cell.trim());
+  if (row.some((value) => value !== '')) rows.push(row);
+  if (rows.length < 2) throw new Error('CSV must contain a header and at least one data row');
+  const headers = rows.shift()!.map((header) => header.toLowerCase());
+  return rows.map((values) => Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ''])));
+};
+
 // ─── Component ──────────────────────────────────────────────────
 export default function AdminDashboard() {
   const { data: session, status } = useSession();
@@ -247,6 +273,8 @@ export default function AdminDashboard() {
 
   const [assignedTeachersStatus, setAssignedTeachersStatus] = useState<AssignedTeacherStatus[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const importTypeRef = useRef<'teachers' | 'classes' | 'subjects'>('teachers');
 
   const track = <T,>(p: Promise<T>) => {
     setPendingCount((c) => c + 1);
@@ -667,6 +695,52 @@ export default function AdminDashboard() {
         { loading: 'Creating subject…', success: 'Subject created', error: (e) => `Failed to create subject: ${String((e as any)?.message || e)}` }
       );
     } catch {}
+  };
+
+  const importCsv = async (file: File) => {
+    const type = importTypeRef.current;
+    try {
+      const rows = parseCsv(await file.text());
+      const endpoint = type === 'teachers' ? '/api/admin/teachers' : type === 'classes' ? '/api/classes' : '/api/subjects';
+      let created = 0;
+      await toast.promise(track((async () => {
+        for (const row of rows) {
+          const name = (type === 'classes' ? row['class name'] || row.name : type === 'subjects' ? row['subject name'] || row.name : '').trim();
+          if (type !== 'teachers') {
+            if (!name) throw new Error(`Row ${created + 2}: name is required`);
+            const current = type === 'classes' ? classes : subjects;
+            if (current.some((entry) => entry.name.toLowerCase() === name.toLowerCase())) continue;
+            await fetchJson(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+            created++;
+            continue;
+          }
+          const username = (row.username ?? '').trim();
+          const teacherName = (row.name ?? '').trim();
+          const password = row.password ?? '';
+          if (!username || !teacherName || !password) throw new Error(`Row ${created + 2}: username, name, and password are required`);
+          if (teachers.some((teacher) => teacher.username.toLowerCase() === username.toLowerCase())) continue;
+          const matchIds = (raw: string, available: TeacherClass[] | TeacherSubject[]) => raw.split('|').map((value) => value.trim().toLowerCase()).filter(Boolean).map((value) => available.find((item) => item.name.toLowerCase() === value)?.id).filter((id): id is string => Boolean(id));
+          await fetchJson(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, name: teacherName, password, role: 'TEACHER', classIds: matchIds(row.classes ?? '', classes), subjectIds: matchIds(row.subjects ?? '', subjects) }) });
+          created++;
+        }
+        const [nextTeachers, nextClasses, nextSubjects] = await Promise.all([fetchJson('/api/admin/teachers'), fetchJson('/api/classes'), fetchJson('/api/subjects')]);
+        setTeachers(nextTeachers); setClasses(nextClasses); setSubjects(nextSubjects);
+        _cache = { teachers: nextTeachers, classes: nextClasses, subjects: nextSubjects };
+      })()), { loading: 'Importing CSV…', success: `CSV import complete`, error: (error) => `CSV import failed: ${String((error as any)?.message || error)}` });
+      toast.success(`Imported ${created} ${type}`);
+    } catch (error) { toast.error(`CSV import failed: ${String((error as any)?.message || error)}`); }
+  };
+
+  const startCsvImport = (type: 'teachers' | 'classes' | 'subjects') => {
+    importTypeRef.current = type;
+    if (importInputRef.current) { importInputRef.current.value = ''; importInputRef.current.click(); }
+  };
+
+  const exportCsv = (type: 'teachers' | 'classes' | 'subjects') => {
+    const rows = type === 'teachers'
+      ? [['Username', 'Name', 'Password', 'Classes', 'Subjects'], ...teachers.map((t) => [t.username, t.name, '', (t.classes ?? []).map((c) => c.name).join(' | '), (t.subjects ?? []).map((s) => s.name).join(' | ')])]
+      : type === 'classes' ? [['Name'], ...classes.map((entry) => [entry.name])] : [['Name'], ...subjects.map((entry) => [entry.name])];
+    downloadCsv(`${type}_${new Date().toISOString().slice(0, 10)}.csv`, toCsv(rows));
   };
 
   // ★ NEW — Delete class handler
@@ -1124,20 +1198,10 @@ export default function AdminDashboard() {
         </div>
 
         {/* ─── Action buttons ─────────────────────────────────── */}
+        <input ref={importInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importCsv(file); }} />
         <div className="flex flex-wrap gap-3">
           <button onClick={() => setShowTeacherForm(!showTeacherForm)} className={btnPrimary} disabled={pendingCount > 0}>
             <Icon.Plus className="h-4 w-4" /> {showTeacherForm ? 'Hide Create Teacher' : 'Create Teacher'}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              const header = ['Username', 'Name', 'Classes', 'Subjects'];
-              const rows = teachers.map((t) => [t.username, t.name, (t.classes ?? []).map((c) => c.name).join(' | '), (t.subjects ?? []).map((s) => s.name).join(' | ')]);
-              downloadCsv(`teachers_${new Date().toISOString().slice(0, 10)}.csv`, toCsv([header, ...rows]));
-            }}
-            className={btnAccent}
-          >
-            <Icon.Download className="h-4 w-4" /> Export Teacher CSV
           </button>
           <button onClick={() => setShowTeacherDetails(!showTeacherDetails)} className={btnSecondary} disabled={pendingCount > 0}>
             <Icon.Users className="h-4 w-4" /> {showTeacherDetails ? 'Hide Teacher Details' : 'Show Teacher Details'}
@@ -1159,9 +1223,15 @@ export default function AdminDashboard() {
         {/* ─── Create Teacher Form ────────────────────────────── */}
         {showTeacherForm && (
           <section className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-            <div className="border-b border-slate-200 px-6 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-6 py-4">
+              <div>
               <h2 className="text-base font-semibold text-slate-900">Create New Teacher</h2>
               <p className="mt-0.5 text-sm text-slate-500">Add a teacher account and assign classes and subjects.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => startCsvImport('teachers')} className={btnSecondary} disabled={pendingCount > 0}>Import CSV</button>
+                <button type="button" onClick={() => exportCsv('teachers')} className={btnAccent}><Icon.Download className="h-4 w-4" /> Export CSV</button>
+              </div>
             </div>
             <form onSubmit={handleCreateTeacher} className="grid grid-cols-1 gap-4 p-6 sm:grid-cols-2">
               <div>
@@ -1202,9 +1272,15 @@ export default function AdminDashboard() {
         {/* ─── Class Manager (create + delete) ────────────────── */}
         {showClassForm && (
           <section className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-            <div className="border-b border-slate-200 px-6 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-6 py-4">
+              <div>
               <h2 className="text-base font-semibold text-slate-900">Manage Classes</h2>
               <p className="mt-0.5 text-sm text-slate-500">Create new classes or remove existing ones.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => startCsvImport('classes')} className={btnSecondary} disabled={pendingCount > 0}>Import CSV</button>
+                <button type="button" onClick={() => exportCsv('classes')} className={btnAccent}><Icon.Download className="h-4 w-4" /> Export CSV</button>
+              </div>
             </div>
             <form onSubmit={handleCreateClass} className="space-y-4 p-6">
               <div className="flex gap-3">
@@ -1252,9 +1328,15 @@ export default function AdminDashboard() {
         {/* ─── Subject Manager (create + delete) ─────────────── */}
         {showSubjectForm && (
           <section className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-            <div className="border-b border-slate-200 px-6 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-6 py-4">
+              <div>
               <h2 className="text-base font-semibold text-slate-900">Manage Subjects</h2>
               <p className="mt-0.5 text-sm text-slate-500">Create new subjects or remove existing ones.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => startCsvImport('subjects')} className={btnSecondary} disabled={pendingCount > 0}>Import CSV</button>
+                <button type="button" onClick={() => exportCsv('subjects')} className={btnAccent}><Icon.Download className="h-4 w-4" /> Export CSV</button>
+              </div>
             </div>
             <form onSubmit={handleCreateSubject} className="space-y-4 p-6">
               <div className="flex gap-3">
